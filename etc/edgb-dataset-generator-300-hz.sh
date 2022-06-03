@@ -1,0 +1,12 @@
+eppe-create-dataset \
+  --m1-min 10.0 --m1-max 40.0 \
+  --m2-min 10.0 --m2-max 40.0 \
+  --fmin 10.0 --fmax 300.0 \
+  --num-freqs 200 --logspace-freqs \
+  --chi1z-min -0.9 --chi1z-max 0.9 \
+  --chi2z-min -0.9 --chi2z-max 0.9 \
+  --num-samples 100000 \
+  --seed 1234 \
+  --pool 2 \
+  --output-file /home/deep/github/eppE/eppe/data/edgb-dataset-log-spaced-300-hz-large-spin-range.pkl \
+  --edgb-max-length-scale 5.0

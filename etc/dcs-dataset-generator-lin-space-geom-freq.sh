@@ -1,0 +1,15 @@
+eppe-create-dataset \
+  --m1-min 10.0 --m1-max 40.0 \
+  --m2-min 10.0 --m2-max 40.0 \
+  --fmin 0.0009 \
+  --fmax 0.018 \
+  --freq-in-geometric-units \
+  --num-freqs 200 \
+  --logspace-freqs \
+  --chi1z-min -0.9 --chi1z-max 0.9 \
+  --chi2z-min -0.9 --chi2z-max 0.9 \
+  --num-samples 100000 \
+  --seed 1234 \
+  --pool 4 \
+  --output-file /home/deep/github/eppE/eppe/data/geom-freqs/dcs-dataset-lin-space-geom-freq-alpha-upto-30.pkl \
+  --dcs-max-length-scale 30.0
