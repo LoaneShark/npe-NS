@@ -1,0 +1,4 @@
+# don't include data directory
+eppe/data
+eppe/etc
+__pycache__
