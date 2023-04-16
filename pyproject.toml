@@ -12,6 +12,7 @@ gwpy = "*"
 
 [tool.poetry.scripts]
 eppe-create-dataset = 'eppe.dataset_generator:main'
+eppe-create-dataset-ppe = 'eppe.dataset_generator_ppe:main'
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
