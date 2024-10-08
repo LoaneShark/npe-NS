@@ -6,6 +6,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from astropy import units as u
+from astropy import constants as c
 import lal, lalsimulation
 
 from eppe.utils import modified_gr_utils, lal_utils
@@ -34,21 +35,14 @@ def get_cli():
                         help="Maximum value of dimensionless aligned secondary spin.")
 
     # modified gr parameters
-    parser.add_argument("--b-ppe", default=0, type=int, 
+    parser.add_argument("--b-ppe", type=float, 
                         help="Leading ppE index.")
-    parser.add_argument("--beta-ppe-bound", default=0.0, type=float, 
-                        help="Upper bound for the abs value of leading ppE beta, ignored if --ppe-saturate-perturbation.")
-    parser.add_argument("--ppe-saturate-perturbation", action='store_true', default=False,
-                        help="Whether to set leading ppE beta by saturating the purturbative condition. "
-                             "If b >= -5, this sets beta bound s.t. ppE correction has the same magnitude as the GR phasing at the same PN order. "
-                             "If b < -5, this sets beta bound s.t. ppE correction has the same magnitude as the GR phasing at the leading order, "
-                             "evaluated at the frequency given by --ppe-perturbation-v.")
-    parser.add_argument("--ppe-perturbation-v", default=0.1, type=float,
-                        help="Frequency at which ppE correction must be smaller than the GR leading phase "
-                             "in order to be considered as perturbation when b < -5, given in terms of v/c.")
-    parser.add_argument("--beta-ppe-from-gaussian", action='store_true', default=False,
-                        help="If true, beta is drawn from a gaussian distribution, using beta bound as the standard deviation. "
-                             "If false, beta is drawn from a uniform distribution, using beta bound as the absolute upper bound.")
+    parser.add_argument("--ppe-ref", default=0.1, type=float,
+                        help="Frequency at which ppE correction must be smaller than GR. "
+                             "The number is given in terms of v/c. "
+                             "However, if ppe-ref-in-f is set to True, it is in Hz. "
+                             "This does not take any effect if b is an interger and b = -5 or b >= -4.")
+    parser.add_argument("--ppe-ref-in-hz", action='store_true', default=False)
 
     # phasing representation
     parser.add_argument("--labels-only", action='store_true', default=False,
@@ -96,8 +90,7 @@ def _get_masses_and_spins(
 def _generate_meta_data_chunks(
         m1_min, m2_min, m1_max, m2_max,
         chi1z_min, chi2z_min, chi1z_max, chi2z_max,
-        b_ppe, beta_ppe_bound, beta_ppe_from_gaussian,
-        ppe_saturate_perturbation, ppe_perturbation_v,
+        b_ppe, ppe_ref, ppe_ref_in_hz,
         num_samples, seed, num_chunks):
     """Get meta data in chunks"""
     np.random.seed(seed)
@@ -107,32 +100,36 @@ def _generate_meta_data_chunks(
         num_samples
     )
 
-    if ppe_saturate_perturbation:
-        eta = modified_gr_utils._symmetric_mass_ratio(m1, m2)
-        if b_ppe <= -4: # GR coeff at 0.5PN is 0, merge with the b <= -5 branch
-            pn_coeff = 3. / 128. / eta
-            beta_ppe_bound = pn_coeff / eta ** (b_ppe/5.)
-            beta_ppe_bound /= ppe_perturbation_v ** (5 + b_ppe)
-            # beta_ppe_bound /= -b_ppe / 5 # compare to GR by dphi/df, not phi
-        else:
-            param_vecs = [lal.CreateREAL8Vector(num_samples) for _ in range(8)]
-            param_vecs[0].data = m1
-            param_vecs[1].data = m2
-            param_vecs[2].data = chi1z
-            param_vecs[3].data = chi2z
-            for i in range(4, 8): # tidal deformation and spin deformation
-                param_vecs[i].data = np.zeros_like(param_vecs[i].data)
-            pn_coeff = lalsimulation.SimInspiralTaylorF2AlignedPhasingArray(*param_vecs).data
-            pn_coeff = pn_coeff[:len(pn_coeff)//3] # remove coeffs for vlogv and vlogvsq
-            pn_coeff = pn_coeff.reshape(-1, num_samples)[b_ppe+5] # take only the pn coeff of the ppE order
-            beta_ppe_bound = np.abs(pn_coeff) / eta ** (b_ppe/5.)
+    eta = modified_gr_utils._symmetric_mass_ratio(m1, m2)
+    if not ppe_ref_in_hz:
+        ppe_ref_v = ppe_ref
     else:
-        beta_ppe_bound = np.full(num_samples, beta_ppe_bound)
+        ppe_ref = ppe_ref * u.Hz * (m1 + m2) * u.solMass
+        ppe_ref = ppe_ref * c.G / c.c**3
+        ppe_ref = ppe_ref.to('').value
+        ppe_ref_v = (np.pi * ppe_ref) ** (1/3)
 
-    if beta_ppe_from_gaussian:
-        beta_ppe = np.random.normal(0., beta_ppe_bound)
-    else:
-        beta_ppe = np.random.uniform(-beta_ppe_bound, beta_ppe_bound)
+    b_ref = int(np.floor(b_ppe))
+    if b_ref <= -4:
+        # GR coeff at 0.5PN is 0, merge with the b <= -5 branch
+        b_ref = -5
+
+    param_vecs = [lal.CreateREAL8Vector(num_samples) for _ in range(8)]
+    param_vecs[0].data = m1
+    param_vecs[1].data = m2
+    param_vecs[2].data = chi1z
+    param_vecs[3].data = chi2z
+    for i in range(4, 8):
+        # tidal deformation and spin deformation
+        param_vecs[i].data = np.zeros_like(param_vecs[i].data)
+    pn_coeff = lalsimulation.SimInspiralTaylorF2AlignedPhasingArray(*param_vecs).data
+    pn_coeff = pn_coeff[:len(pn_coeff)//3] # remove coeffs for vlogv and vlogvsq
+    pn_coeff = pn_coeff.reshape(-1, num_samples)[b_ref+5] # take only the pn coeff of the ppE order
+    beta_ppe_bound = np.abs(pn_coeff) * ppe_ref_v**(b_ref-b_ppe)
+    beta_ppe_bound /= eta**(b_ppe/5.)
+
+    beta_ppe = -1. + 2. * np.random.randint(0, 2, num_samples)
+    beta_ppe *= beta_ppe_bound
     b_ppe = np.full_like(beta_ppe, b_ppe)
 
     return np.array_split(
@@ -168,42 +165,37 @@ def _populate_chunk(metadata_array,
         beta parameter corresponding to the modified theory.
         Required parameter.
     """
+    # FIXME
+    assert minus_gr
+
     r = pd.DataFrame(
         data=metadata_array,
         columns=('m1', 'm2', 's1z', 's2z', 'b_ppe', 'beta_ppe'))
 
-    if not labels_only:
-        freqs = []
-        phases = []
-        for m1, m2, s1z, s2z, b_ppe, beta_ppe in metadata_array:
-            # create and insert Non-GR ppE coefficient in LAL Dict
-            params = lal.CreateDict()
-            b_ppe = int(np.rint(b_ppe))
-            twice_pn_order = b_ppe + 5
-            eta = modified_gr_utils._symmetric_mass_ratio(m1, m2)
-            lalsim_beta_ppe = modified_gr_utils.non_gr_parameter_lalsimulation(beta_ppe, eta, twice_pn_order/2.)
-            insert_func = "SimInspiralWaveformParamsInsertNonGRBetaPPE"
-            insert_func += f"Minus{-twice_pn_order}" if twice_pn_order < 0 else f"{twice_pn_order}"
-            getattr(lalsimulation, insert_func)(params, lalsim_beta_ppe)
+    if labels_only:
+        return r
 
-            freq, phase = lal_utils.get_phenomD_phasing(
-                m1, m2, s1z, s2z, fmin, fmax,
-                num_freqs, params, log_spacing,
-                freq_in_natural_units
-            )
-            if minus_gr:
-                _, phase_gr = lal_utils.get_phenomD_phasing(
-                    m1, m2, s1z, s2z, fmin, fmax,
-                    num_freqs, lal.CreateDict(), log_spacing,
-                    freq_in_natural_units
-                )
-                phase -= phase_gr
-            freqs.append(freq)
-            phases.append(phase)
+    freqs = []
+    phases = []
+    for m1, m2, s1z, s2z, b_ppe, beta_ppe in metadata_array:
+
+        if not log_spacing:
+            freq = np.linspace(fmin, fmax, num_freqs)
+        else:
+            freq = np.logspace(np.log10(fmin), np.log10(fmax), num_freqs)
+        if not freq_in_natural_units:
+            freq = freq * u.Hz * (m1 + m2) * u.solMass
+            freq = freq * c.G / c.c**3
+            freq = freq.to('').value
+
+        eta = modified_gr_utils._symmetric_mass_ratio(m1, m2)
+        phase = beta_ppe * eta**(b_ppe/5) * (np.pi*freq)**(b_ppe/3)
         
-        r['freqs'] = freqs
-        r['phases'] = phases
-
+        freqs.append(freq)
+        phases.append(phase)
+    
+    r['freqs'] = freqs
+    r['phases'] = phases
     return r
 
 
@@ -214,8 +206,7 @@ def main():
         args.m1_max, args.m2_max,
         args.chi1z_min, args.chi2z_min,
         args.chi1z_max, args.chi2z_max,
-        args.b_ppe, args.beta_ppe_bound, args.beta_ppe_from_gaussian,
-        args.ppe_saturate_perturbation, args.ppe_perturbation_v,
+        args.b_ppe, args.ppe_ref, args.ppe_ref_in_hz,
         args.num_samples, args.seed,
         args.pool
     )

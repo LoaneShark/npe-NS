@@ -13,6 +13,8 @@ gwpy = "*"
 [tool.poetry.scripts]
 eppe-create-dataset = 'eppe.dataset_generator:main'
 eppe-create-dataset-ppe = 'eppe.dataset_generator_ppe:main'
+eppe-create-dataset-ppe-bounds = 'eppe.dataset_generator_ppe_bounds:main'
+eppe-create-dataset-scottlike = 'eppe.dataset_generator_scottlike:main'
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
