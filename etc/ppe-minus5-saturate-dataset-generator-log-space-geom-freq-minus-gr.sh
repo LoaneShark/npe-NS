@@ -1,0 +1,17 @@
+eppe-create-dataset-ppe \
+  --m1-min 10.0 --m1-max 40.0 \
+  --m2-min 10.0 --m2-max 40.0 \
+  --chi1z-min -0.9 --chi1z-max 0.9 \
+  --chi2z-min -0.9 --chi2z-max 0.9 \
+  --b-ppe -5 \
+  --ppe-saturate-perturbation \
+  --ppe-perturbation-v 0.1414 \
+  --fmin 0.0009 --fmax 0.018 \
+  --num-freqs 448 \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --minus-gr \
+  --num-samples 100000 \
+  --seed 1234 \
+  --pool 4 \
+  --output-file ../data/ppe-minus5-saturate-dataset-log-space-geom-freq-minus-gr.pkl \
