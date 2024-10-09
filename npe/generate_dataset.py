@@ -6,9 +6,8 @@ import pandas as pd
 from tqdm import tqdm
 
 from astropy import units as u
+from astropy import constants as c
 import lal, lalsimulation
-
-from eppe.utils import modified_gr_utils, lal_utils
 
 
 def get_cli():
@@ -34,21 +33,18 @@ def get_cli():
                         help="Maximum value of dimensionless aligned secondary spin.")
 
     # modified gr parameters
-    parser.add_argument("--b-ppe", default=0, type=int, 
+    parser.add_argument("--b-ppe", type=int, 
                         help="Leading ppE index.")
-    parser.add_argument("--beta-ppe-bound", default=0.0, type=float, 
-                        help="Upper bound for the abs value of leading ppE beta, ignored if --ppe-saturate-perturbation.")
-    parser.add_argument("--ppe-saturate-perturbation", action='store_true', default=False,
-                        help="Whether to set leading ppE beta by saturating the purturbative condition. "
-                             "If b >= -5, this sets beta bound s.t. ppE correction has the same magnitude as the GR phasing at the same PN order. "
-                             "If b < -5, this sets beta bound s.t. ppE correction has the same magnitude as the GR phasing at the leading order, "
-                             "evaluated at the frequency given by --ppe-perturbation-v.")
-    parser.add_argument("--ppe-perturbation-v", default=0.1, type=float,
-                        help="Frequency at which ppE correction must be smaller than the GR leading phase "
-                             "in order to be considered as perturbation when b < -5, given in terms of v/c.")
-    parser.add_argument("--beta-ppe-from-gaussian", action='store_true', default=False,
-                        help="If true, beta is drawn from a gaussian distribution, using beta bound as the standard deviation. "
-                             "If false, beta is drawn from a uniform distribution, using beta bound as the absolute upper bound.")
+    parser.add_argument("--n-ppe", type=int, 
+                        help="Length of the ppE series.")
+    parser.add_argument("--ppe-ref-min", default=0., type=float,
+                        help="Lower frequency bound considered for the ppE expansion."
+                             "If non-positive, use fmin.")
+    parser.add_argument("--ppe-ref-max", default=0., type=float,
+                        help="Upper frequency bound considered for the ppE expansion."
+                             "If non-positive, use fmax.")
+    parser.add_argument("--ppe-ref-min-in-geometric-units", action='store_true', default=False)
+    parser.add_argument("--ppe-ref-max-in-geometric-units", action='store_true', default=False)
 
     # phasing representation
     parser.add_argument("--labels-only", action='store_true', default=False,
@@ -93,11 +89,60 @@ def _get_masses_and_spins(
     return m1, m2, chi1z, chi2z
 
 
+def _get_pn_coeffs(m1, m2, chi1z, chi2z):
+    num_samples = len(m1)
+    param_vecs = [lal.CreateREAL8Vector(num_samples) for _ in range(8)]
+    param_vecs[0].data = m1
+    param_vecs[1].data = m2
+    param_vecs[2].data = chi1z
+    param_vecs[3].data = chi2z
+    for i in range(4, 8):
+        # tidal deformation and spin deformation
+        param_vecs[i].data = np.zeros_like(param_vecs[i].data)
+    coeffs = lalsimulation.SimInspiralTaylorF2AlignedPhasingArray(*param_vecs).data
+    coeffs_v, coeffs_vlogv, coeffs_vlogvsq = coeffs.reshape(3,-1,num_samples)
+    return coeffs_v.T, coeffs_vlogv.T, coeffs_vlogvsq.T
+
+
+def _get_coeff_bound(b, coeffs_v, v_min, v_max):
+    bound = np.zeros_like(b, dtype=float)
+    mask_fbd = (b == 0) | (b >= 3)
+    mask_pos = (b >= -3) & (~mask_fbd)
+    mask_neg = (b <= -5) & (~mask_fbd)
+    mask_miss = ~(mask_fbd|mask_pos|mask_neg)
+    bound[mask_pos] = np.abs(coeffs_v[mask_pos,b[mask_pos]+5])
+    bound[mask_neg] = np.abs(coeffs_v[mask_neg,0]) * v_min[mask_neg] ** (-5-b[mask_neg])
+    bound_miss_pos = np.abs(coeffs_v[mask_miss,2]) * v_min[mask_miss]
+    bound_miss_neg = np.abs(coeffs_v[mask_miss,0]) / v_max[mask_miss]
+    bound[mask_miss] = np.min([bound_miss_pos, bound_miss_neg], axis=0)
+    return bound
+
+
+def _get_gamma_bar_bound(b, coeffs_v, v_min, v_max):
+    return _get_coeff_bound(b, coeffs_v, v_min, v_max)
+
+
+def _get_dpsi_bar_bound(k, coeffs_v, v_min, v_max, gamma_bar_bound):
+    mask = gamma_bar_bound == 0.
+    dpsi_bar_bound = np.zeros_like(k, dtype=float)
+    delta_bar_bound = _get_coeff_bound(k[~mask], coeffs_v[~mask], v_min[~mask], v_max[~mask])
+    dpsi_bar_bound[~mask] = delta_bar_bound / gamma_bar_bound[~mask]
+    return dpsi_bar_bound
+
+
+def _convert_f_to_fgeom(f, mtot):
+    fgeom = f * u.Hz * mtot * u.solMass
+    fgeom = fgeom * c.G / c.c**3
+    fgeom = fgeom.to('').value
+    return fgeom
+
+
 def _generate_meta_data_chunks(
         m1_min, m2_min, m1_max, m2_max,
         chi1z_min, chi2z_min, chi1z_max, chi2z_max,
-        b_ppe, beta_ppe_bound, beta_ppe_from_gaussian,
-        ppe_saturate_perturbation, ppe_perturbation_v,
+        b_ppe, n_ppe, 
+        ppe_ref_min, ppe_ref_min_in_geometric_units,
+        ppe_ref_max, ppe_ref_max_in_geometric_units,
         num_samples, seed, num_chunks):
     """Get meta data in chunks"""
     np.random.seed(seed)
@@ -107,36 +152,30 @@ def _generate_meta_data_chunks(
         num_samples
     )
 
-    if ppe_saturate_perturbation:
-        eta = modified_gr_utils._symmetric_mass_ratio(m1, m2)
-        if b_ppe <= -4: # GR coeff at 0.5PN is 0, merge with the b <= -5 branch
-            pn_coeff = 3. / 128. / eta
-            beta_ppe_bound = pn_coeff / eta ** (b_ppe/5.)
-            beta_ppe_bound /= ppe_perturbation_v ** (5 + b_ppe)
-            # beta_ppe_bound /= -b_ppe / 5 # compare to GR by dphi/df, not phi
-        else:
-            param_vecs = [lal.CreateREAL8Vector(num_samples) for _ in range(8)]
-            param_vecs[0].data = m1
-            param_vecs[1].data = m2
-            param_vecs[2].data = chi1z
-            param_vecs[3].data = chi2z
-            for i in range(4, 8): # tidal deformation and spin deformation
-                param_vecs[i].data = np.zeros_like(param_vecs[i].data)
-            pn_coeff = lalsimulation.SimInspiralTaylorF2AlignedPhasingArray(*param_vecs).data
-            pn_coeff = pn_coeff[:len(pn_coeff)//3] # remove coeffs for vlogv and vlogvsq
-            pn_coeff = pn_coeff.reshape(-1, num_samples)[b_ppe+5] # take only the pn coeff of the ppE order
-            beta_ppe_bound = np.abs(pn_coeff) / eta ** (b_ppe/5.)
-    else:
-        beta_ppe_bound = np.full(num_samples, beta_ppe_bound)
+    b = np.repeat(b_ppe, num_samples)
+    ref_min = np.repeat(ppe_ref_min, num_samples)
+    ref_max = np.repeat(ppe_ref_max, num_samples)
+    if not ppe_ref_min_in_geometric_units:
+        ref_min = _convert_f_to_fgeom(ref_min, m1 + m2)
+    if not ppe_ref_max_in_geometric_units:
+        ref_max = _convert_f_to_fgeom(ref_max, m1 + m2)
+    v_min = (np.pi * ref_min) ** (1/3)
+    v_max = (np.pi * ref_max) ** (1/3)
 
-    if beta_ppe_from_gaussian:
-        beta_ppe = np.random.normal(0., beta_ppe_bound)
-    else:
-        beta_ppe = np.random.uniform(-beta_ppe_bound, beta_ppe_bound)
-    b_ppe = np.full_like(beta_ppe, b_ppe)
+    pn_coeffs_v, _, _ = _get_pn_coeffs(m1, m2, chi1z, chi2z)
+    gamma_bar_bound = _get_gamma_bar_bound(b, pn_coeffs_v, v_min, v_max)
+    dpsi_bar_bounds = [_get_dpsi_bar_bound(b+i, pn_coeffs_v, v_min, v_max, gamma_bar_bound) \
+                        for i in range(2, n_ppe)]
+    dpsi_bar_bounds = np.asarray(dpsi_bar_bounds).reshape(-1,num_samples).T
+    ppe_bounds = np.concatenate([gamma_bar_bound[:,None], dpsi_bar_bounds], axis=-1)
 
-    return np.array_split(
-        np.vstack((m1, m2, chi1z, chi2z, b_ppe, beta_ppe)).T, num_chunks)
+    gamma_bar = gamma_bar_bound * (-1. + 2. * np.random.randint(0, 2, num_samples))
+    dpsi_bars = np.random.uniform(-dpsi_bar_bounds, dpsi_bar_bounds)
+    ppe_coeffs = np.concatenate([gamma_bar[:,None], dpsi_bars], axis=-1)
+
+    labels = np.vstack([m1, m2, chi1z, chi2z, b]).T
+    labels = np.concatenate([labels, ppe_bounds, ppe_coeffs], axis=-1)
+    return np.array_split(labels, num_chunks)
 
 
 def _populate_chunk(metadata_array, 
@@ -168,54 +207,60 @@ def _populate_chunk(metadata_array,
         beta parameter corresponding to the modified theory.
         Required parameter.
     """
+    # FIXME
+    assert minus_gr
+
+    n_ppe = (metadata_array.shape[-1] - 7) // 2 + 2
+    ppe_keys = [f'dpsi_bar_{i}' for i in range(2, n_ppe)]
+    ppe_bound_keys = [k+'_bound' for k in ppe_keys]
     r = pd.DataFrame(
         data=metadata_array,
-        columns=('m1', 'm2', 's1z', 's2z', 'b_ppe', 'beta_ppe'))
+        columns=['m1', 'm2', 's1z', 's2z', 'b_ppe'] \
+                + ['gamma_bar_bound'] + ppe_bound_keys \
+                + ['gamma_bar'] + ppe_keys)
+    if labels_only:
+        return r
 
-    if not labels_only:
-        freqs = []
-        phases = []
-        for m1, m2, s1z, s2z, b_ppe, beta_ppe in metadata_array:
-            # create and insert Non-GR ppE coefficient in LAL Dict
-            params = lal.CreateDict()
-            b_ppe = int(np.rint(b_ppe))
-            twice_pn_order = b_ppe + 5
-            eta = modified_gr_utils._symmetric_mass_ratio(m1, m2)
-            lalsim_beta_ppe = modified_gr_utils.non_gr_parameter_lalsimulation(beta_ppe, eta, twice_pn_order/2.)
-            insert_func = "SimInspiralWaveformParamsInsertNonGRBetaPPE"
-            insert_func += f"Minus{-twice_pn_order}" if twice_pn_order < 0 else f"{twice_pn_order}"
-            getattr(lalsimulation, insert_func)(params, lalsim_beta_ppe)
+    mtot = np.sum(metadata_array[:,:2], axis=-1, keepdims=True)
+    b = metadata_array[:,[4]]
+    k = b + np.arange(n_ppe)[None,:]
+    gamma_bar = metadata_array[:,[4+n_ppe]]
+    dpsi_bars = metadata_array[:,5+n_ppe:]
+    delta_bars = np.concatenate([gamma_bar,
+                                 np.zeros_like(gamma_bar),
+                                 gamma_bar * dpsi_bars], axis=-1)
 
-            freq, phase = lal_utils.get_phenomD_phasing(
-                m1, m2, s1z, s2z, fmin, fmax,
-                num_freqs, params, log_spacing,
-                freq_in_natural_units
-            )
-            if minus_gr:
-                _, phase_gr = lal_utils.get_phenomD_phasing(
-                    m1, m2, s1z, s2z, fmin, fmax,
-                    num_freqs, lal.CreateDict(), log_spacing,
-                    freq_in_natural_units
-                )
-                phase -= phase_gr
-            freqs.append(freq)
-            phases.append(phase)
-        
-        r['freqs'] = freqs
-        r['phases'] = phases
-
+    if not log_spacing:
+        freqs = np.linspace(fmin, fmax, num_freqs)
+    else:
+        freqs = np.logspace(np.log10(fmin), np.log10(fmax), num_freqs)
+    freqs = np.tile(freqs, (metadata_array.shape[0], 1))
+    if not freq_in_natural_units:
+        freqs = _convert_f_to_fgeom(freqs, mtot)
+    v = (np.pi * freqs) ** (1/3)
+    phases = delta_bars[:,None,:] * v[:,:,None] ** k[:,None,:]
+    phases = np.sum(phases, axis=-1)
+    r['freqs'] = list(freqs)
+    r['phases'] = list(phases)
     return r
 
 
 def main():
     args = get_cli()
+    if args.ppe_ref_min <= 0:
+        args.ppe_ref_min = args.fmin
+        args.ppe_ref_min_in_geometric_units = args.freq_in_geometric_units
+    if args.ppe_ref_max <= 0:
+        args.ppe_ref_max = args.fmax
+        args.ppe_ref_max_in_geometric_units = args.freq_in_geometric_units
     chunks = _generate_meta_data_chunks(
         args.m1_min, args.m2_min,
         args.m1_max, args.m2_max,
         args.chi1z_min, args.chi2z_min,
         args.chi1z_max, args.chi2z_max,
-        args.b_ppe, args.beta_ppe_bound, args.beta_ppe_from_gaussian,
-        args.ppe_saturate_perturbation, args.ppe_perturbation_v,
+        args.b_ppe, args.n_ppe,
+        args.ppe_ref_min, args.ppe_ref_min_in_geometric_units,
+        args.ppe_ref_max, args.ppe_ref_max_in_geometric_units,
         args.num_samples, args.seed,
         args.pool
     )

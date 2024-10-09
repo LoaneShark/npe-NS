@@ -1,4 +1,4 @@
-from collections import deque
+from collections import deque, defaultdict
 from matplotlib import pyplot as plt
 import numpy as np
 import torch
@@ -55,15 +55,24 @@ class VAEEvaluationAgent(object):
 
     # keys to maintain and to report
     # if others are generated at evaluation, they will not be recorded
-    _metrics_keys = frozenset({'recon_err', 'kl_div'})
+    # _metrics_keys = frozenset({'kl_div', 'recon_err_shape', 'recon_err_scale'})
     _distrib_keys = frozenset({'values', 'labels', 'theory', 'mu', 'logvar'})
     _sample_keys = frozenset({'values', 'z'})
 
-    def __init__(self, model, loss_fn, loss_fn_kwargs={}, 
-                 distrib_thin_fac=1., sample_size=1):
+    def __init__(self, model, 
+                 loss_fn, diagnosis_fn, 
+                 loss_fn_kwargs={}, diagnosis_fn_kwargs={},
+                 # norm=1., 
+                 distrib_thin_fac=1., sample_size=1,
+                 metrics_keys={}, 
+                 distrib_keys={}, 
+                 sample_keys={}):
         self._model = model
         self._loss_fn = loss_fn
         self._loss_fn_kwargs = loss_fn_kwargs
+        self._diagnosis_fn = diagnosis_fn
+        self._diagnosis_fn_kwargs = diagnosis_fn_kwargs
+        # self._norm = norm
         self._distrib_thin_fac = distrib_thin_fac
         self._sample_size = sample_size
         self._acc_recent_weight = 0.
@@ -72,7 +81,7 @@ class VAEEvaluationAgent(object):
         self._acc_train_loss = 0.
         self._acc_val_weight = 0.
         self._acc_val_loss = 0.
-        self._acc_metrics = {k: 0. for k in self._metrics_keys}
+        self._acc_metrics = defaultdict(float)
         self._acc_distrib = {k: [] for k in self._distrib_keys}
 
     @property
@@ -84,6 +93,15 @@ class VAEEvaluationAgent(object):
     @property
     def loss_fn_kwargs(self):
         return self._loss_fn_kwargs
+    @property
+    def diagnosis_fn(self):
+        return self._diagnosis_fn
+    @property
+    def diagnosis_fn_kwargs(self):
+        return self._diagnosis_fn_kwargs
+    # @property
+    # def norm(self):
+    #     return self._norm
     @property
     def distrib_thin_fac(self):
         return self._distrib_thin_fac
@@ -105,30 +123,39 @@ class VAEEvaluationAgent(object):
         return self.add_batch(data_batch)
 
     def add_batch(self, data_batch):
+        size = len(data_batch[0])
         if self._model.training:
-            size, loss = evaluate_batch_for_training(
-                            self.model, data_batch, 
-                            self.loss_fn, self.loss_fn_kwargs)
+            # size, loss = evaluate_batch_for_training(
+            #                 self.model, data_batch, 
+            #                 self.loss_fn, self.loss_fn_kwargs, self.norm)
+            loss = self.loss_fn(self.model, *data_batch, **self.loss_fn_kwargs)
             self._acc_recent_weight += size
             self._acc_recent_loss += size * loss.item()
             self._acc_train_weight += size
             self._acc_train_loss += size * loss.item()
         else:
             with torch.no_grad():
-                size, loss, metrics, distrib \
-                        = evaluate_batch_for_validation(
-                            self.model, data_batch, 
-                            self.loss_fn, self.loss_fn_kwargs)
+                # size, loss, metrics, distrib \
+                #         = evaluate_batch_for_validation(
+                #             self.model, data_batch, 
+                #             self.loss_fn, self.loss_fn_kwargs, self.norm)
+                loss = self.loss_fn(
+                            self.model, *data_batch, **self.loss_fn_kwargs)
+                metrics, distrib = self.diagnosis_fn(
+                            self.model, *data_batch, **self.diagnosis_fn_kwargs)
             self._acc_recent_weight += size
             self._acc_recent_loss += size * loss.item()
             self._acc_val_weight += size
             self._acc_val_loss += size * loss.item()
-            for k in self._metrics_keys:
-                self._acc_metrics[k] += size * metrics[k]
+            # for k in self._metrics_keys:
+            #     self._acc_metrics[k] += size * metrics[k]
+            for k in metrics:
+                 self._acc_metrics[k] += size * metrics[k]
             mask_thin = np.random.sample(size) < self._distrib_thin_fac
             if np.any(mask_thin):
                 for k in self._distrib_keys:
-                    self._acc_distrib[k].append(distrib[k][mask_thin])
+                    self._acc_distrib[k].append(distrib[k][:size][mask_thin])
+                    self._acc_distrib[k].append(distrib[k][size:])
         return loss
 
     def pop_recent_loss(self):
@@ -146,7 +173,7 @@ class VAEEvaluationAgent(object):
             return self._acc_val_loss / self._acc_val_weight
 
     def report_metrics(self):
-        return {k: self._acc_metrics[k] / self._acc_val_weight for k in self._metrics_keys}
+        return {k: self._acc_metrics[k] / self._acc_val_weight for k in self._acc_metrics}
 
     def report_latent_distrib(self):
         distrib = {k: np.concatenate(self._acc_distrib[k], axis=0) for k in self._distrib_keys}
@@ -157,39 +184,42 @@ class VAEEvaluationAgent(object):
         distrib = {k: np.concatenate(self._acc_distrib[k], axis=0) for k in self._distrib_keys}
         sample = get_latent_sample(self._model, distrib, self._sample_size)
         sample = {k: sample[k] for k in self._sample_keys}
+        # fig = plot_latent_sample(sample, norm=self.norm)
         fig = plot_latent_sample(sample)
         return fig
 
 
-def evaluate_batch_for_training(model, data_batch, loss_fn, loss_fn_kwargs):
-    v, l, t = align_data_format_with_model(model, *data_batch)
-    v_recon_var, mu, logvar = model(v, l)
-    loss = loss_fn(v, v_recon_var, mu, logvar, l, t, **loss_fn_kwargs)
-    return len(v), loss
+# def evaluate_batch_for_training(model, data_batch, loss_fn, loss_fn_kwargs, norm=1.):
+#     v, l, t = align_data_format_with_model(model, *data_batch)
+#     norm = align_data_format_with_model(model, norm).reshape(1, 1, -1)
+#     v_recon_var, mu, logvar = model(v, l)
+#     loss = loss_fn(v*norm, v_recon_var*norm, mu, logvar, l, t, **loss_fn_kwargs)
+#     return len(v), loss
 
-def evaluate_batch_for_validation(model, data_batch, loss_fn, loss_fn_kwargs):
-    v, l, t = align_data_format_with_model(model, *data_batch)
-    v_recon_var, mu, logvar = model(v, l)
-    v_recon = model.decoder(mu, l)
-    loss = loss_fn(v, v_recon_var, mu, logvar, l, t, **loss_fn_kwargs)
-    kl_div = torch.mean(kl_loss(mu, logvar, dim=-1))
-    recon_err = torch.mean(mse_loss(v, v_recon, dim=-1))
-    metrics = dict(
-        kl_div=kl_div,
-        recon_err=recon_err,
-    )
-    distrib = dict(
-        values=v,
-        labels=l,
-        theory=t,
-        mu=mu,
-        logvar=logvar,
-        recon=v_recon,
-        recon_var=v_recon_var,
-    )
-    metrics = {k: v.item() for k, v in metrics.items()}
-    distrib = {k: v.detach().cpu().numpy() for k, v in distrib.items()}
-    return len(v), loss, metrics, distrib
+# def evaluate_batch_for_validation(model, data_batch, loss_fn, loss_fn_kwargs, norm=1.):
+#     v, l, t = align_data_format_with_model(model, *data_batch)
+#     norm = align_data_format_with_model(model, norm).reshape(1, 1, -1)
+#     v_recon_var, mu, logvar = model(v, l)
+#     v_recon = model.decoder(mu, l)
+#     loss = loss_fn(v*norm, v_recon_var*norm, mu, logvar, l, t, **loss_fn_kwargs)
+#     kl_div = torch.mean(kl_loss(mu, logvar, dim=-1))
+#     recon_err = torch.mean(mse_loss(v*norm, v_recon*norm, dim=-1))
+#     metrics = dict(
+#         kl_div=kl_div,
+#         recon_err=recon_err,
+#     )
+#     distrib = dict(
+#         values=v,
+#         labels=l,
+#         theory=t,
+#         mu=mu,
+#         logvar=logvar,
+#         recon=v_recon,
+#         recon_var=v_recon_var,
+#     )
+#     metrics = {k: v.item() for k, v in metrics.items()}
+#     distrib = {k: v.detach().cpu().numpy() for k, v in distrib.items()}
+#     return len(v), loss, metrics, distrib
 
 def get_latent_sample(model, ref_distrib, size):
     mu_ref = ref_distrib['mu']
@@ -198,6 +228,7 @@ def get_latent_sample(model, ref_distrib, size):
         # FIXME: implement other-than-2d behavior
         return dict()
     r_ref = np.sqrt(np.mean(np.sum(mu_ref**2, -1)))
+#     r_ref = 1.
     angles = np.linspace(0, 2*np.pi, size, endpoint=False)
     z = r_ref * np.exp(1j*angles)
     z = np.vstack([np.real(z), np.imag(z)]).T
@@ -228,9 +259,9 @@ def get_model_format(model):
 
 def align_data_format_with_model(model, *data):
     format_kwargs = get_model_format(model)
-    data = (torch.as_tensor(d, **format_kwargs) for d in data)
+    data = tuple(torch.as_tensor(d, **format_kwargs) for d in data)
+    if len(data) == 1: data = data[0]
     return data
-
 
 def plot_latent_distrib(distrib, zoomin_fac=20., **kwargs):
     mu = distrib['mu']
@@ -241,12 +272,12 @@ def plot_latent_distrib(distrib, zoomin_fac=20., **kwargs):
         # FIXME: implement other-than-2d behavior
         return
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    plot_latent_distrib_2d(
-        mu[:,0], mu[:,1], logvar[:,0], logvar[:,1], 
-        color_by, size_by, axis=axes[0], **kwargs) 
     mu_sq = np.sum(mu**2, axis=-1)
     mask = np.sqrt(mu_sq/np.max(mu_sq)) < 1/zoomin_fac
-    if np.any(mask):   
+    plot_latent_distrib_2d(
+        mu[:,0], mu[:,1], logvar[:,0], logvar[:,1], 
+        color_by, size_by, axis=axes[0], **kwargs)
+    if np.any(mask):  
         plot_latent_distrib_2d(
             mu[mask][:,0], mu[mask][:,1], 
             logvar[mask][:,0], logvar[mask][:,1],
@@ -280,7 +311,13 @@ def plot_latent_distrib_2d(
 
     for icb, cb in enumerate(np.unique(color_by)):
         mask_cb = color_by == cb
-        size = size_by[mask_cb]**2 / np.max(size_by)**2
+        size_max = np.max(size_by[mask_cb])
+#         if size_max == 0:
+#             size = 1.
+#         else:
+#             size = (size_by[mask_cb] / size_max) ** 2
+        # FIXME
+        size = 1.
         marker = scatter_marker
         color = f'C{icb}'
         label = f"{cb}"
@@ -304,16 +341,17 @@ def plot_latent_distrib_2d(
 
     return axis
 
-def plot_latent_sample(sample, **kwargs):
+def plot_latent_sample(sample, norm=1., **kwargs):
     v = sample['values'][:,0]
     z = sample['z']
+    norm = np.asarray(norm).reshape(-1)
     ncol = 4
     nrow = (len(v) - 1) // ncol + 1
     fig, axes = plt.subplots(nrow, ncol, figsize=(14, 2*nrow))
     axes = axes.flatten()
     for i in range(len(v)):
         label = "(" + ", ".join("{:0.1e}".format(zz) for zz in z[i]) + ")"
-        axes[i].plot(v[i], label=label, **kwargs)
+        axes[i].plot(v[i]*norm, label=label, **kwargs)
         axes[i].legend()
     return fig
 

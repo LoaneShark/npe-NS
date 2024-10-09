@@ -15,21 +15,32 @@ from torch.utils.data import (
 
 class PhasingDataset(torchDataset):
 
+    _freq_key = 'freqs'
     _value_keys = ['phases']
     _label_keys = ['m1', 'm2', 's1z', 's2z']
-    _theory_keys = ['b_ppe', 'beta_ppe']
+    _theory_keys = ['b_ppe', 'gamma_bar']
+    _theory_spec = 'dpsi_bar'
 
-    def __init__(self, waveform_dataset, norm_fac={}):
+    def __init__(self, waveform_dataset, n_ppe=None, norm_fac={}):
         self._len = len(waveform_dataset)
-        self._theory = self.transform_theory(waveform_dataset[self._theory_keys].values)
+        theory_keys = self._theory_keys
+        if n_ppe is not None:
+            spec = [self._theory_spec+f'_{i}' for i in range(2,n_ppe)]
+            theory_keys = self._theory_keys + spec
+        self._theory = self.transform_theory(waveform_dataset[theory_keys].values)
         self._labels = self.transform_labels(waveform_dataset[self._label_keys].values)
-        self._values = self.transform_values(waveform_dataset[self._value_keys].values)
+        if n_ppe is not None:
+            freqs = self.transform_values(waveform_dataset[self._freq_key].values)
+            self._values = self.calculate_phases(freqs, self._theory[:,0], self._theory[:,1], self._theory[:,2:])
+            self._values = self._values.reshape(self._len, 1, -1)
+        else:
+            self._values = self.transform_values(waveform_dataset[self._value_keys].values)
         for th, norm in norm_fac.items():
             mask = self._theory[:,0] == float(th)
             self._values[mask] /= norm
-        self._theory = np.asarray(self._theory, dtype=np.float32)
-        self._labels = np.asarray(self._labels, dtype=np.float32)
-        self._values = np.asarray(self._values, dtype=np.float32)
+        self._theory = np.asarray(self._theory, dtype=np.float64)
+        self._labels = np.asarray(self._labels, dtype=np.float64)
+        self._values = np.asarray(self._values, dtype=np.float64)
 
     def __len__(self):
         return self._len
@@ -40,11 +51,17 @@ class PhasingDataset(torchDataset):
     @staticmethod
     def transform_labels(labels):
         m1, m2, s1z, s2z = np.asarray(labels).T
+        mask = m1 < m2
+        m1[mask], m2[mask] = m2[mask], m1[mask]
+        s1z[mask], s2z[mask] = s2z[mask], s1z[mask]
         mc = component_masses_to_chirp_mass(m1, m2)
         eta = component_masses_to_symmetric_mass_ratio(m1, m2)
+        mtot = m1 + m2
+        q = m2 / m1
         chis = 0.5 * (s1z + s2z)
-        chia = 0.5 * (s1z - s2z) * np.sign(m1 - m2)
-        return np.asarray([np.log(mc), np.log(0.25/eta-1), chis, chia]).T
+        chia = 0.5 * (s1z - s2z)
+        # return np.asarray([np.log(mc), np.log(0.25/eta-1), chis, chia]).T
+        return np.asarray([np.log(mc), q, chis, chia]).T
 
     @staticmethod
     def transform_values(values):
@@ -58,6 +75,14 @@ class PhasingDataset(torchDataset):
     @staticmethod
     def transform_theory(theory):
         return np.asarray(theory, dtype=float)
+
+    @staticmethod
+    def calculate_phases(freqs, b, gamma_bar, dpsi_bars):
+        v = (np.pi * freqs) ** (1/3)
+        phases = gamma_bar[:,None] * v ** b[:,None]
+        for i,dpb in enumerate(dpsi_bars.T):
+            phases += gamma_bar[:,None] * dpb[:,None] * v ** (b[:,None] + i + 2)
+        return phases
 
 
 def component_masses_to_chirp_mass(mass_1, mass_2):
