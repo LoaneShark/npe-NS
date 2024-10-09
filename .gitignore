@@ -1,6 +1,6 @@
 __pycache__/
+_prev/
+dataset/
+network/
 *pyc
-etc/
-data/
-eppe/data/
 .DS_Store

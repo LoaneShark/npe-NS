@@ -1,1 +1,1 @@
-# Extended parameterized post Einsteinian
+# Neural post-Einsteinian framework
