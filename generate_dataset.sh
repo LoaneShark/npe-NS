@@ -11,6 +11,7 @@ nsample=${2:-100000} # reproduces the paper
 # How to best include massive scalar theories (follow up with Nico on specifics)
 
 if [[ "$content" == "BH" ]]
+then
   # Point Particle parameters
   M_MIN=5.0
   M_MAX=30.0
@@ -22,6 +23,7 @@ if [[ "$content" == "BH" ]]
   F_MAX=0.018 
 
 elif [[ "$content" == "NS" ]]
+then
   # Point Particle parameters
   M_MIN=0.6
   M_MAX=3.0
@@ -39,29 +41,31 @@ elif [[ "$content" == "NS" ]]
   F_MAX=0.018 
 else
   echo "Invalid content: please select one of (BH, NS)"
-  end
+  exit 1
 fi
 
 dataset_folder="dataset_$content"
 
-''' # No valid theories are relevant for NS-NS mergers at b = -1
-python npe/generate_dataset.py \
-  --b-ppe -1 \
-  --n-ppe 1 \
-  --minus-gr \
-  --m1-min $M_MIN --m1-max $M_MAX \
-  --m2-min $M_MIN --m2-max $M_MAX \
-  --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
-  --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
-  --fmin $F_MIN --fmax $F_MAX \
-  --num-freqs 640 \
-  --logspace-freqs \
-  --freq-in-geometric-units \
-  --num-samples $nsample \
-  --seed 1234 \
-  --pool 2 \
-  --output-file $dataset_folder/ppe-minus1.pkl
-'''
+# No valid theories are relevant for NS-NS mergers at b = -1
+if [[ "$content" == "BH" ]]
+then
+  python npe/generate_dataset.py \
+    --b-ppe -1 \
+    --n-ppe 1 \
+    --minus-gr \
+    --m1-min $M_MIN --m1-max $M_MAX \
+    --m2-min $M_MIN --m2-max $M_MAX \
+    --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
+    --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+    --fmin $F_MIN --fmax $F_MAX \
+    --num-freqs 640 \
+    --logspace-freqs \
+    --freq-in-geometric-units \
+    --num-samples $nsample \
+    --seed 1234 \
+    --pool 2 \
+    --output-file $dataset_folder/ppe-minus1.pkl
+fi
 
 python npe/generate_dataset.py \
   --b-ppe -3 \
