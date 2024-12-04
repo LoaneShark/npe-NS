@@ -1,5 +1,6 @@
 import argparse
 import multiprocessing
+import os
 
 import numpy as np
 import pandas as pd
@@ -283,6 +284,9 @@ def main():
         ]
         result = [r.get() for r in tqdm(rs)]
 
+    output_directory = os.path.dirname(args.output_file)
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
     pd.concat(result).to_pickle(
         args.output_file,
         protocol=3  # compatible with python < 3.8

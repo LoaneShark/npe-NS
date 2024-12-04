@@ -1,5 +1,4 @@
 import argparse
-
 import os
 import sys
 import shutil
@@ -9,11 +8,9 @@ from glob import glob
 from time import time
 from datetime import datetime
 import warnings
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -31,6 +28,8 @@ def get_cli():
                         help="Output directory")
     parser.add_argument("--run-title", type=str, default="npe",
                         help="Title of the run")
+    parser.add_argument("--run-type", type=str, default="BH",
+                        help="Toggle BH or NS binaries")
     args = parser.parse_args()
     return args
 
@@ -356,15 +355,26 @@ def main():
 
     args.dataset_recipe_from_file = None
     args.dataset_recipe_save_file = None
-    args.dataset_filenames = [
-        "ppe-minus13.pkl",
-        "ppe-minus11.pkl",
-        "ppe-minus9.pkl",
-        "ppe-minus7.pkl",
-        "ppe-minus5.pkl",
-        "ppe-minus3.pkl",
-        "ppe-minus1.pkl",
-    ]
+    if args.run_type == 'NS':
+        args.dataset_filenames = [
+            "ppe-minus13.pkl",
+            "ppe-minus11.pkl",
+            "ppe-minus9.pkl",
+            "ppe-minus7.pkl",
+            "ppe-minus5.pkl",
+            "ppe-minus3.pkl",
+            "ppe-minus1.pkl",
+        ]
+    else:
+        args.dataset_filenames = [
+            "ppe-minus13.pkl",
+            "ppe-minus11.pkl",
+            "ppe-minus9.pkl",
+            "ppe-minus7.pkl",
+            "ppe-minus5.pkl",
+            "ppe-minus3.pkl",
+            "ppe-minus1.pkl",
+        ]
     args.dataset_type = PhasingDataset
     args.dataset_n_ppe = 1
     args.dataset_norm_fac = {}

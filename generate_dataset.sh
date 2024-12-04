@@ -1,4 +1,4 @@
-content=${1:-"BH"}
+systype=${1:-"BH"}
 nsample=${2:-100000} # reproduces the paper
 # nsample=1000 # for test runs
 
@@ -10,7 +10,7 @@ nsample=${2:-100000} # reproduces the paper
 # find new way to rescale frequency bins (currently N=640, logarithmic spacing) ? --> training data dependent
 # How to best include massive scalar theories (follow up with Nico on specifics)
 
-if [[ "$content" == "BH" ]]
+if [[ "$systype" == "BH" ]]
 then
   # Point Particle parameters
   M_MIN=5.0
@@ -22,7 +22,7 @@ then
   F_MIN=0.0004 
   F_MAX=0.018 
 
-elif [[ "$content" == "NS" ]]
+elif [[ "$systype" == "NS" ]]
 then
   # Point Particle parameters
   M_MIN=0.6
@@ -36,36 +36,32 @@ then
   L_MIN=0
   L_MAX=1
 
-  # TODO: Relevant frequency range
-  F_MIN=0.0004 
-  F_MAX=0.018 
+  # WIP: Relevant frequency range
+  F_MIN=0.000029
+  F_MAX=0.0108
 else
-  echo "Invalid content: please select one of (BH, NS)"
+  echo "Invalid systype: please select one of (BH, NS)"
   exit 1
 fi
 
-dataset_folder="dataset_$content"
+dataset_folder="dataset_$systype"
 
-# No valid theories are relevant for NS-NS mergers at b = -1
-if [[ "$content" == "BH" ]]
-then
-  python npe/generate_dataset.py \
-    --b-ppe -1 \
-    --n-ppe 1 \
-    --minus-gr \
-    --m1-min $M_MIN --m1-max $M_MAX \
-    --m2-min $M_MIN --m2-max $M_MAX \
-    --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
-    --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
-    --fmin $F_MIN --fmax $F_MAX \
-    --num-freqs 640 \
-    --logspace-freqs \
-    --freq-in-geometric-units \
-    --num-samples $nsample \
-    --seed 1234 \
-    --pool 2 \
-    --output-file $dataset_folder/ppe-minus1.pkl
-fi
+python npe/generate_dataset.py \
+  --b-ppe -1 \
+  --n-ppe 1 \
+  --minus-gr \
+  --m1-min $M_MIN --m1-max $M_MAX \
+  --m2-min $M_MIN --m2-max $M_MAX \
+  --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
+  --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs 640 \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --num-samples $nsample \
+  --seed 1234 \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-minus1.pkl
 
 python npe/generate_dataset.py \
   --b-ppe -3 \

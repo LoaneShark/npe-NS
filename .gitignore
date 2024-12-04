@@ -1,6 +1,7 @@
 __pycache__/
 _prev/
 dataset/
+dataset_*/
 network/
 *pyc
 .DS_Store
