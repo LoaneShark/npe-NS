@@ -6,3 +6,5 @@ network/
 *pyc
 .DS_Store
 npe.code-workspace
+logs/
+scripts/
