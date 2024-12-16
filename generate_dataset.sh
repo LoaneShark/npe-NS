@@ -19,8 +19,8 @@ then
   CHI_MAX=0.099
 
   # Relevant frequency range
-  F_MIN=0.0004 
-  F_MAX=0.018 
+  F_MIN=0.0004
+  F_MAX=0.018
 
 elif [[ "$systype" == "NS" ]]
 then
@@ -36,9 +36,11 @@ then
   L_MIN=0
   L_MAX=1
 
-  # WIP: Relevant frequency range
-  F_MIN=0.000029
-  F_MAX=0.0108
+  # WIP: Relevant frequency range (double check these)
+  #F_MIN=0.00003
+  #F_MAX=0.025
+  F_MIN=0.004 
+  F_MAX=0.18 
 else
   echo "Invalid systype: please select one of (BH, NS)"
   exit 1
