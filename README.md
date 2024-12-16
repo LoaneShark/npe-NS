@@ -14,8 +14,8 @@ The waveform model for GW parameter estimation is built based on the module `npe
 
 For generating the dataset, you need `lal`, `astropy`, etc. 
 
-For training the network, you need `pytorch` (cuda support is preferred but not necessary) and `tensorboard`.
+For training the network, you need `pytorch` (cuda support is preferred but not necessary), `tensorboard`, etc.
 
-For the waveform model, you need bilby.
+For the waveform model, you need `bilby`, `lal`, etc.
 
-A relatively simple plan that covers all is the `igwn` setup. I have tested things with [`igwn-py310`](https://computing.docs.ligo.org/conda/environments/igwn-py310.html) -- once this is installed, add `tensorboard` to your environment and you should be good. 
+A relatively simple solution that covers all is [`igwn-py310`](https://computing.docs.ligo.org/conda/environments/igwn-py310.html) plus `tensorboard`.
