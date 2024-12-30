@@ -7,3 +7,4 @@ network/
 npe.code-workspace
 logs/
 scripts/
+npe/utils/param_estimation_test/submit.sh
