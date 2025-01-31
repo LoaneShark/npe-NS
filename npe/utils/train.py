@@ -263,7 +263,7 @@ def align_data_format_with_model(model, *data):
     if len(data) == 1: data = data[0]
     return data
 
-def plot_latent_distrib(distrib, zoomin_fac=20., **kwargs):
+def plot_latent_distrib(distrib, zoomin_fac=20., plot_masked=True, **kwargs):
     mu = distrib['mu']
     logvar = distrib['logvar']
     color_by = distrib['theory'][:,0]
@@ -271,21 +271,25 @@ def plot_latent_distrib(distrib, zoomin_fac=20., **kwargs):
     if mu.shape[-1] != 2:
         # FIXME: implement other-than-2d behavior
         return
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    nplots = 2 if plot_masked else 1
+    fig, axes = plt.subplots(1, nplots, figsize=(6*nplots + 2*(nplots-1), 6))
+    if not plot_masked:
+        axes = [axes]
     mu_sq = np.sum(mu**2, axis=-1)
     mask = np.sqrt(mu_sq/np.max(mu_sq)) < 1/zoomin_fac
     plot_latent_distrib_2d(
         mu[:,0], mu[:,1], logvar[:,0], logvar[:,1], 
         color_by, size_by, axis=axes[0], **kwargs)
-    if np.any(mask):  
+    if plot_masked and np.any(mask):  
         plot_latent_distrib_2d(
             mu[mask][:,0], mu[mask][:,1], 
             logvar[mask][:,0], logvar[mask][:,1],
             color_by[mask], size_by[mask], axis=axes[1], **kwargs)
     axes[0].set_xlabel(r'$z_0$')
     axes[0].set_ylabel(r'$z_1$')
-    axes[1].set_xlabel(r'$z_0$')
-    axes[1].set_ylabel(r'$z_1$')
+    if plot_masked:
+        axes[1].set_xlabel(r'$z_0$')
+        axes[1].set_ylabel(r'$z_1$')
     return fig
 
 def plot_latent_distrib_2d(
