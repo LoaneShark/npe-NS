@@ -228,7 +228,7 @@ priors['geocent_time'] = bilby.core.prior.Uniform(
     minimum=injection_parameters['geocent_time'] - 0.1, 
     maximum=injection_parameters['geocent_time'] + 0.1, name='geocent_time')
 priors['chirp_mass'] = bilby.core.prior.Uniform(
-    minimum=5., maximum=8., name='chirp_mass', unit='$M_{\\odot}$')
+    minimum=1., maximum=80., name='chirp_mass', unit='$M_{\\odot}$')
 priors['mass_ratio'] = bilby.core.prior.Uniform(
     minimum=0.125, maximum=1., name='mass_ratio')
 priors.pop('mass_1')

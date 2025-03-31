@@ -34,6 +34,7 @@ def train(args):
     import os
     import sys
     import warnings
+    import numpy as np
     from glob import glob
     from datetime import datetime
     from matplotlib import pyplot as plt

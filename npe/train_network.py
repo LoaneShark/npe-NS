@@ -18,7 +18,6 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 torch.set_default_dtype(torch.float64)
 
-
 def get_cli():
     parser = argparse.ArgumentParser()
     # source parameters

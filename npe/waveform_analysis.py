@@ -151,7 +151,7 @@ class VAE(nn.Module):
         batch_size = z.shape[0]
         x1, x2 = self.grid_decoder(z, cond)
         if xin is None:
-            xin = torch.linspace(0, 1, self.data_dim, device=x1.device)
+            xin = torch.linspace(0, 1, self.data_dim, device=x1.device, dtype=torch.float32)
             xin = xin.repeat(batch_size, 1)
         xout_comp = x1[:,None,:] * torch.exp(x2[:,None,:] * xin[:,:,None])
         xout = torch.sum(xout_comp, dim=-1).view(batch_size, 1, -1)
