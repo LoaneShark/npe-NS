@@ -16,7 +16,7 @@ then
   M_MIN=5.0
   M_MAX=30.0
   CHI_MIN=-0.99
-  CHI_MAX=0.099
+  CHI_MAX=0.99
 
   # Relevant frequency range
   F_MIN=0.0004
@@ -46,7 +46,7 @@ else
   exit 1
 fi
 
-dataset_folder="dataset_$systype"
+dataset_folder="dataset_${systype}"
 
 python npe/generate_dataset.py \
   --b-ppe -1 \
@@ -111,6 +111,7 @@ python npe/generate_dataset.py \
   --num-freqs 640 \
   --logspace-freqs \
   --freq-in-geometric-units \
+  --ppe-ref-min 10 \
   --num-samples $nsample \
   --seed 1234 \
   --pool 2 \
@@ -128,6 +129,7 @@ python npe/generate_dataset.py \
   --num-freqs 640 \
   --logspace-freqs \
   --freq-in-geometric-units \
+  --ppe-ref-min 10 \
   --num-samples $nsample \
   --seed 1234 \
   --pool 2 \
@@ -145,6 +147,7 @@ python npe/generate_dataset.py \
   --num-freqs 640 \
   --logspace-freqs \
   --freq-in-geometric-units \
+  --ppe-ref-min 10 \
   --num-samples $nsample \
   --seed 1234 \
   --pool 2 \
@@ -162,6 +165,7 @@ python npe/generate_dataset.py \
   --num-freqs 640 \
   --logspace-freqs \
   --freq-in-geometric-units \
+  --ppe-ref-min 10 \
   --num-samples $nsample \
   --seed 1234 \
   --pool 2 \
