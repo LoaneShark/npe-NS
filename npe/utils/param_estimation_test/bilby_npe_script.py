@@ -15,6 +15,7 @@ from bilby.gw.conversion import (
     component_masses_to_chirp_mass, 
     component_masses_to_symmetric_mass_ratio,
 )
+from bilby.core.utils import logger
 from astropy import units as u
 from astropy import constants as c
 from importlib import import_module
@@ -34,6 +35,10 @@ parser.add_argument("--beta-rel-inj", type=float, default=-0.,
                     help="PPE beta for injection, relative to the post-Einsteinian boundary.")
 parser.add_argument("--rootdir", type=str, default="~/npe",
                     help="Path to npe project root directory.")
+parser.add_argument("--network", type=str, default="npe_network.pt",
+                    help="Name of the VAE to load.")
+parser.add_argument("--save_results", type=argparse.BooleanOptionalAction, default=True, 
+                    help="Toggle whether or not all data files are saved manually")
 args = parser.parse_args()
 
 NPOOL = args.npool
@@ -44,6 +49,8 @@ PE_DIR  = os.path.join(ROOTDIR, 'npe', 'utils', 'param_estimation_test')
 
 outdir = os.path.join(ROOTDIR, 'logs', 'pe')
 label = args.label
+save_results = args.save_results
+network_name = args.network
 bilby.core.utils.setup_logger(outdir=outdir, label=label)
 
 np.random.seed(1234)
@@ -83,7 +90,9 @@ def source_model_inj(frequency_array, mass_1, mass_2, luminosity_distance,
         polarizations[k] *= np.exp(-1j * phi)
     return polarizations
 
-network_file = os.path.join(PE_DIR, "npe_network.pt")
+logger.info('Loading VAE: %s', network_name)
+#network_file = os.path.join(PE_DIR, "npe_network.pt")
+network_file = os.path.join(PE_DIR, network_name)
 network_kwargs = dict(depth=4, width=512,
                       data_dim=640, grid_dim=2)
 vae_analyzer = PhaseModificationAnalysis(network_file, network_kwargs)
@@ -180,6 +189,7 @@ injection_parameters['z_2'] = z2
 injection_parameters['z_abs'] = np.sqrt(z1*z1 + z2*z2)
 injection_parameters['z_theta'] = np.mod(np.arctan2(z2, z1), 2*np.pi)
 
+# Fix to 128s for BNS
 duration = bilby.gw.detector.get_safe_signal_duration(
         injection_parameters['mass_1'],
         injection_parameters['mass_2'],
@@ -219,9 +229,10 @@ interferometers.set_strain_data_from_zero_noise(
 interferometers.inject_signal(parameters=injection_parameters,
                               waveform_generator=waveform_generator_inj)
 interferometers.plot_data(outdir=outdir, label=label)
+if save_results:
+    interferometers.save_data(outdir=outdir, label=label)
 
-
-priors = bilby.gw.prior.BBHPriorDict(aligned_spin=True)
+priors = bilby.gw.prior.BBHPriorDict(aligned_spin=True, conversion_function=bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters)
 for key in ['psi', 'ra', 'dec', 'theta_jn', 'luminosity_distance']:
     priors[key] = injection_parameters[key]
 priors['geocent_time'] = bilby.core.prior.Uniform(
@@ -247,14 +258,29 @@ likelihood = bilby.gw.GravitationalWaveTransient(
 
 result = bilby.run_sampler(
     likelihood=likelihood, priors=priors, 
-    sampler='dynesty', 
+    sampler='dynesty',
     sample='acceptance-walk',
-    nlive=1000, 
+    nlive=1000,
     naccept=60,
     dlogz=0.1,
-    npool=NPOOL, 
+    npool=NPOOL,
     check_point_delta_t=CHECKPOINT_DELTAT,
     injection_parameters=injection_parameters, outdir=outdir, label=label,
     conversion_function=bilby.gw.conversion.generate_all_bbh_parameters)
 
+if save_results:
+    result.save_posterior_samples()
+    #result.save_to_file()
+
 result.plot_corner()
+
+# Plot reconstructed waveform posterior over detector noise/ASD
+from bilby.core.result import result_file_name
+from bilby.gw.result import CBCResult
+
+# Reload results as CBCResult class
+output_file = result_file_name(outdir=outdir, label=label)
+cbc_result = CBCResult.from_json(output_file, outdir=outdir, label=label)
+
+for ifo in interferometers:
+    cbc_result.plot_interferometer_waveform_posterior(interferometer=ifo, n_samples=1000, save=True)
