@@ -10,6 +10,11 @@ from datetime import datetime
 import warnings
 import numpy as np
 import pandas as pd
+
+import PIL.Image
+if not hasattr(PIL.Image, 'Resampling'):  # Pillow<9.0
+    PIL.Image.Resampling = PIL.Image
+
 import matplotlib.pyplot as plt
 import torch
 from torch import nn
@@ -29,6 +34,8 @@ def get_cli():
                         help="Title of the run")
     parser.add_argument("--run-type", type=str, default="BH",
                         help="Toggle BH or NS binaries")
+    parser.add_argument("--seed", type=int, default=1234,
+                        help="Set RNG seed for training")
     args = parser.parse_args()
     return args
 
@@ -379,7 +386,7 @@ def main():
     args.dataset_norm_fac = {}
     args.dataset_sample_size = 0.25
     args.dataset_subset_split = [0.8, 0.1, 0.1]
-    args.dataset_seed = 1234
+    args.dataset_seed = args.seed
 
     train(args)
 

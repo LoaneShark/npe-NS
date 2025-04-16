@@ -8,9 +8,11 @@
 #SBATCH --ntasks-per-node=1            # Number of tasks per node (1 per node for parallel execution)
 
 content=${1:-"BH"}
+seed=${2:-1234}
 
 python npe/train_network.py \
   --dataset-rootdir dataset_$content \
   --output-rootdir network \
   --run-title npe-$content \
-  --run-type $content
+  --run-type $content \
+  --seed $seed

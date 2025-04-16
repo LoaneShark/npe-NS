@@ -1,6 +1,7 @@
 systype=${1:-"BH"}
 nsample=${2:-100000} # reproduces the paper
 # nsample=1000 # for test runs
+seed=${3:-1234}
 
 # TODO: Priority 1
 # rescale frequency (f here is actually ~ fM, so NS ranges will be smaller --> find minimum based on LIGO sensitivity?)
@@ -36,7 +37,7 @@ then
   L_MIN=0
   L_MAX=1
 
-  # WIP: Relevant frequency range (double check these)
+  # WIP: Relevant frequency range (TODO: double check these)
   #F_MIN=0.00003
   #F_MAX=0.025
   F_MIN=0.004 
@@ -61,7 +62,7 @@ python npe/generate_dataset.py \
   --logspace-freqs \
   --freq-in-geometric-units \
   --num-samples $nsample \
-  --seed 1234 \
+  --seed $seed \
   --pool 2 \
   --output-file $dataset_folder/ppe-minus1.pkl
 
@@ -78,7 +79,7 @@ python npe/generate_dataset.py \
   --logspace-freqs \
   --freq-in-geometric-units \
   --num-samples $nsample \
-  --seed 1234 \
+  --seed $seed \
   --pool 2 \
   --output-file $dataset_folder/ppe-minus3.pkl
 
@@ -95,7 +96,7 @@ python npe/generate_dataset.py \
   --logspace-freqs \
   --freq-in-geometric-units \
   --num-samples $nsample \
-  --seed 1234 \
+  --seed $seed \
   --pool 2 \
   --output-file $dataset_folder/ppe-minus5.pkl
 
@@ -113,7 +114,7 @@ python npe/generate_dataset.py \
   --freq-in-geometric-units \
   --ppe-ref-min 10 \
   --num-samples $nsample \
-  --seed 1234 \
+  --seed $seed \
   --pool 2 \
   --output-file $dataset_folder/ppe-minus7.pkl
 
@@ -131,7 +132,7 @@ python npe/generate_dataset.py \
   --freq-in-geometric-units \
   --ppe-ref-min 10 \
   --num-samples $nsample \
-  --seed 1234 \
+  --seed $seed \
   --pool 2 \
   --output-file $dataset_folder/ppe-minus9.pkl
 
@@ -149,7 +150,7 @@ python npe/generate_dataset.py \
   --freq-in-geometric-units \
   --ppe-ref-min 10 \
   --num-samples $nsample \
-  --seed 1234 \
+  --seed $seed \
   --pool 2 \
   --output-file $dataset_folder/ppe-minus11.pkl
 
@@ -167,6 +168,6 @@ python npe/generate_dataset.py \
   --freq-in-geometric-units \
   --ppe-ref-min 10 \
   --num-samples $nsample \
-  --seed 1234 \
+  --seed $seed \
   --pool 2 \
   --output-file $dataset_folder/ppe-minus13.pkl
