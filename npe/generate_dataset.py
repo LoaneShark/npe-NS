@@ -15,7 +15,7 @@ def get_cli():
     parser = argparse.ArgumentParser(
         "Create a pickle file with GR/non-GR IMRPhenomD waveform phasing")
 
-    # source parameters
+    # point-mass source parameters
     parser.add_argument("--m1-min", default=10.0, type=float,
                         help="Minimum value of m1 in solmass.")
     parser.add_argument("--m2-min", default=10.0, type=float,
@@ -32,6 +32,24 @@ def get_cli():
                         help="Minimum value of dimensionless aligned secondary spin.")
     parser.add_argument("--chi2z-max", default=0.0, type=float,
                         help="Maximum value of dimensionless aligned secondary spin.")
+    
+    # tidal source parameters
+    parser.add_argument("--l1-min", default=0.0, type=float,
+                        help="Minimum value of dimensionless Lambda_1.")
+    parser.add_argument("--l2-min", default=0.0, type=float,
+                        help="Minimum value of dimensionless Lambda_2.")
+    parser.add_argument("--l1-max", default=0.0, type=float,
+                        help="Maximum value of dimensionless Lambda_1.")
+    parser.add_argument("--l2-max", default=0.0, type=float,
+                        help="Maximum value of dimensionless Lambda_2.")
+    parser.add_argument("--cq1-min", default=0.0, type=float,
+                        help="Minimum value of quadrupolar spin deformability CQ_1.")
+    parser.add_argument("--cq2-min", default=0.0, type=float,
+                        help="Minimum value of quadrupolar spin deformability CQ_2.")
+    parser.add_argument("--cq1-max", default=0.0, type=float,
+                        help="Maximum value of quadrupolar spin deformability CQ_1.")
+    parser.add_argument("--cq2-max", default=0.0, type=float,
+                        help="Maximum value of quadrupolar spin deformability CQ_2.")
 
     # modified gr parameters
     parser.add_argument("--b-ppe", type=int, 
@@ -89,22 +107,42 @@ def _get_masses_and_spins(
     chi2z = np.random.uniform(chi2z_min, chi2z_max, num_samples)
     return m1, m2, chi1z, chi2z
 
+def _get_deformation_terms(
+        L1_min, L2_min, L1_max, L2_max,
+        CQ1_min, CQ2_min, CQ1_max, CQ2_max,
+        num_samples):
+    """Get uniformly sampled masses and aligned spins"""
+    L1 = np.random.uniform(L1_min, L1_max, num_samples)
+    L2 = np.random.uniform(L2_min, L2_max, num_samples)
+    CQ1 = np.random.uniform(CQ1_min, CQ1_max, num_samples)
+    CQ2 = np.random.uniform(CQ2_min, CQ2_max, num_samples)
+    return L1, L2, CQ1, CQ2
 
-def _get_pn_coeffs(m1, m2, chi1z, chi2z):
+def _get_pn_coeffs(m1, m2, chi1z, chi2z, l1, l2, cq1, cq2):
     num_samples = len(m1)
     param_vecs = [lal.CreateREAL8Vector(num_samples) for _ in range(8)]
     param_vecs[0].data = m1
     param_vecs[1].data = m2
     param_vecs[2].data = chi1z
     param_vecs[3].data = chi2z
+    # tidal deformation and spin deformation
+    # TODO: What units/ranges are expected for self-spin quadrupole deformabilities?
+    param_vecs[4].data = l1
+    param_vecs[5].data = l2
+    param_vecs[6].data = cq1
+    param_vecs[7].data = cq2
+
+    '''
     for i in range(4, 8):
         # tidal deformation and spin deformation
         param_vecs[i].data = np.zeros_like(param_vecs[i].data)
+    '''
+
     coeffs = lalsimulation.SimInspiralTaylorF2AlignedPhasingArray(*param_vecs).data
     coeffs_v, coeffs_vlogv, coeffs_vlogvsq = coeffs.reshape(3,-1,num_samples)
     return coeffs_v.T, coeffs_vlogv.T, coeffs_vlogvsq.T
 
-
+# TODO: does this need to be mofied further for BNS case?
 def _get_coeff_bound(b, coeffs_v, v_min, v_max):
     bound = np.zeros_like(b, dtype=float)
     mask_fbd = (b == 0) | (b >= 3)
@@ -141,6 +179,8 @@ def _convert_f_to_fgeom(f, mtot):
 def _generate_meta_data_chunks(
         m1_min, m2_min, m1_max, m2_max,
         chi1z_min, chi2z_min, chi1z_max, chi2z_max,
+        l1_min, l2_min, l1_max, l2_max,
+        cq1_min, cq2_min, cq1_max, cq2_max,
         b_ppe, n_ppe, 
         ppe_ref_min, ppe_ref_min_in_geometric_units,
         ppe_ref_max, ppe_ref_max_in_geometric_units,
@@ -150,6 +190,11 @@ def _generate_meta_data_chunks(
     m1, m2, chi1z, chi2z = _get_masses_and_spins(
         m1_min, m2_min, m1_max, m2_max,
         chi1z_min, chi2z_min, chi1z_max, chi2z_max,
+        num_samples
+    )
+    l1, l2, cq1, cq2 = _get_deformation_terms(
+        l1_min, l2_min, l1_max, l2_max,
+        cq1_min, cq2_min, cq1_max, cq2_max,
         num_samples
     )
 
@@ -163,18 +208,20 @@ def _generate_meta_data_chunks(
     v_min = (np.pi * ref_min) ** (1/3)
     v_max = (np.pi * ref_max) ** (1/3)
 
-    pn_coeffs_v, _, _ = _get_pn_coeffs(m1, m2, chi1z, chi2z)
+    pn_coeffs_v, _, _ = _get_pn_coeffs(m1, m2, chi1z, chi2z, l1, l2, cq1, cq2)
+    #print('pn_coeffs_v: ', pn_coeffs_v.shape)
+    #print(pn_coeffs_v)
     gamma_bar_bound = _get_gamma_bar_bound(b, pn_coeffs_v, v_min, v_max)
     dpsi_bar_bounds = [_get_dpsi_bar_bound(b+i, pn_coeffs_v, v_min, v_max, gamma_bar_bound) \
                         for i in range(2, n_ppe)]
     dpsi_bar_bounds = np.asarray(dpsi_bar_bounds).reshape(-1,num_samples).T
-    ppe_bounds = np.concatenate([gamma_bar_bound[:,None], dpsi_bar_bounds], axis=-1)
+    ppe_bounds = np.concatenate([gamma_bar_bound[:, None], dpsi_bar_bounds], axis=-1)
 
     gamma_bar = gamma_bar_bound * (-1. + 2. * np.random.randint(0, 2, num_samples))
     dpsi_bars = np.random.uniform(-dpsi_bar_bounds, dpsi_bar_bounds)
-    ppe_coeffs = np.concatenate([gamma_bar[:,None], dpsi_bars], axis=-1)
+    ppe_coeffs = np.concatenate([gamma_bar[:, None], dpsi_bars], axis=-1)
 
-    labels = np.vstack([m1, m2, chi1z, chi2z, b]).T
+    labels = np.vstack([m1, m2, chi1z, chi2z, l1, l2, b]).T
     labels = np.concatenate([labels, ppe_bounds, ppe_coeffs], axis=-1)
     return np.array_split(labels, num_chunks)
 
@@ -211,22 +258,22 @@ def _populate_chunk(metadata_array,
     # FIXME
     assert minus_gr
 
-    n_ppe = (metadata_array.shape[-1] - 7) // 2 + 2
+    n_ppe = (metadata_array.shape[-1] - 9) // 2 + 2
     ppe_keys = [f'dpsi_bar_{i}' for i in range(2, n_ppe)]
     ppe_bound_keys = [k+'_bound' for k in ppe_keys]
     r = pd.DataFrame(
         data=metadata_array,
-        columns=['m1', 'm2', 's1z', 's2z', 'b_ppe'] \
+        columns=['m1', 'm2', 's1z', 's2z', 'L1', 'L2', 'b_ppe'] \
                 + ['gamma_bar_bound'] + ppe_bound_keys \
                 + ['gamma_bar'] + ppe_keys)
     if labels_only:
         return r
 
     mtot = np.sum(metadata_array[:,:2], axis=-1, keepdims=True)
-    b = metadata_array[:,[4]]
+    b = metadata_array[:,[6]]
     k = b + np.arange(n_ppe)[None,:]
-    gamma_bar = metadata_array[:,[4+n_ppe]]
-    dpsi_bars = metadata_array[:,5+n_ppe:]
+    gamma_bar = metadata_array[:,[6+n_ppe]]
+    dpsi_bars = metadata_array[:,7+n_ppe:]
     delta_bars = np.concatenate([gamma_bar,
                                  np.zeros_like(gamma_bar),
                                  gamma_bar * dpsi_bars], axis=-1)
@@ -259,6 +306,10 @@ def main():
         args.m1_max, args.m2_max,
         args.chi1z_min, args.chi2z_min,
         args.chi1z_max, args.chi2z_max,
+        args.l1_min, args.l2_min, 
+        args.l1_max, args.l2_max,
+        args.cq1_min, args.cq2_min, 
+        args.cq1_max, args.cq2_max,
         args.b_ppe, args.n_ppe,
         args.ppe_ref_min, args.ppe_ref_min_in_geometric_units,
         args.ppe_ref_max, args.ppe_ref_max_in_geometric_units,

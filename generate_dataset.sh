@@ -13,35 +13,51 @@ seed=${3:-1234}
 
 if [[ "$systype" == "BH" ]]
 then
-  # Point Particle parameters
+  # Point Particle BH parameters
   M_MIN=5.0
   M_MAX=30.0
   CHI_MIN=-0.99
   CHI_MAX=0.99
 
+  # Dimensionless BH tidal parameters
+  L_MIN=0
+  L_MAX=0
+  CQ_MIN=0
+  CQ_MAX=0
+  #CQ_MIN=1
+  #CQ_MAX=1
+
   # Relevant frequency range
-  F_MIN=0.0004
-  F_MAX=0.018
+  F_MIN=0.0004    # 10 Hz (detector limit)
+  F_MAX=0.018     # IMRPhenomD inspiral cutoff
 
 elif [[ "$systype" == "NS" ]]
 then
-  # Point Particle parameters
+  # Point Particle NS parameters
   M_MIN=0.6
   M_MAX=3.0
-  CHI_MIN=-0.05
-  CHI_MAX=0.05
+  CHI_MIN=-0.1
+  CHI_MAX=0.1
 
-  # Tidal parameters (Unimplemented)
-  C_MIN=0.1
-  C_MAX=0.4
+  # Dimensionless NS tidal parameters
   L_MIN=0
-  L_MAX=1
+  #L_MAX=5000
+  L_MAX=0
+  CQ_MIN=0
+  CQ_MAX=0
+  #CQ_MIN=1
+  #CQ_MAX=10
 
-  # WIP: Relevant frequency range (TODO: double check these)
-  #F_MIN=0.00003
-  #F_MAX=0.025
-  F_MIN=0.004 
-  F_MAX=0.18 
+  # Compactness and radius (unused)
+  #C_MIN=0.1
+  #C_MAX=0.4
+  #R_MIN=9
+  #R_MAX=12
+
+  # Relevant frequency range
+  # TODO: Double check f_min and f_max for IMRPhenomPv2_NRTidalv2 case
+  F_MIN=0.00004   # 10 Hz (detector limit)
+  F_MAX=0.018     # IMRPhenomD inspiral cutoff
 else
   echo "Invalid systype: please select one of (BH, NS)"
   exit 1
@@ -57,14 +73,41 @@ python npe/generate_dataset.py \
   --m2-min $M_MIN --m2-max $M_MAX \
   --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
   --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
   --fmin $F_MIN --fmax $F_MAX \
   --num-freqs 640 \
   --logspace-freqs \
   --freq-in-geometric-units \
+  --ppe-ref-min 10 \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
   --output-file $dataset_folder/ppe-minus1.pkl
+  
+python npe/generate_dataset.py \
+  --b-ppe -2 \
+  --n-ppe 1 \
+  --minus-gr \
+  --m1-min $M_MIN --m1-max $M_MAX \
+  --m2-min $M_MIN --m2-max $M_MAX \
+  --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
+  --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs 640 \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --ppe-ref-min 10 \
+  --num-samples $nsample \
+  --seed $seed \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-minus2.pkl
 
 python npe/generate_dataset.py \
   --b-ppe -3 \
@@ -74,14 +117,41 @@ python npe/generate_dataset.py \
   --m2-min $M_MIN --m2-max $M_MAX \
   --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
   --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
   --fmin $F_MIN --fmax $F_MAX \
   --num-freqs 640 \
   --logspace-freqs \
   --freq-in-geometric-units \
+  --ppe-ref-min 10 \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
   --output-file $dataset_folder/ppe-minus3.pkl
+
+python npe/generate_dataset.py \
+  --b-ppe -4 \
+  --n-ppe 1 \
+  --minus-gr \
+  --m1-min $M_MIN --m1-max $M_MAX \
+  --m2-min $M_MIN --m2-max $M_MAX \
+  --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
+  --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs 640 \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --ppe-ref-min 10 \
+  --num-samples $nsample \
+  --seed $seed \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-minus4.pkl
 
 python npe/generate_dataset.py \
   --b-ppe -5 \
@@ -91,14 +161,42 @@ python npe/generate_dataset.py \
   --m2-min $M_MIN --m2-max $M_MAX \
   --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
   --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
   --fmin $F_MIN --fmax $F_MAX \
   --num-freqs 640 \
   --logspace-freqs \
   --freq-in-geometric-units \
+  --ppe-ref-min 10 \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
   --output-file $dataset_folder/ppe-minus5.pkl
+
+
+python npe/generate_dataset.py \
+  --b-ppe -6 \
+  --n-ppe 1 \
+  --minus-gr \
+  --m1-min $M_MIN --m1-max $M_MAX \
+  --m2-min $M_MIN --m2-max $M_MAX \
+  --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
+  --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs 640 \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --ppe-ref-min 10 \
+  --num-samples $nsample \
+  --seed $seed \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-minus6.pkl
 
 python npe/generate_dataset.py \
   --b-ppe -7 \
@@ -108,6 +206,10 @@ python npe/generate_dataset.py \
   --m2-min $M_MIN --m2-max $M_MAX \
   --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
   --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
   --fmin $F_MIN --fmax $F_MAX \
   --num-freqs 640 \
   --logspace-freqs \
@@ -119,6 +221,28 @@ python npe/generate_dataset.py \
   --output-file $dataset_folder/ppe-minus7.pkl
 
 python npe/generate_dataset.py \
+  --b-ppe -8 \
+  --n-ppe 1 \
+  --minus-gr \
+  --m1-min $M_MIN --m1-max $M_MAX \
+  --m2-min $M_MIN --m2-max $M_MAX \
+  --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
+  --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs 640 \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --ppe-ref-min 10 \
+  --num-samples $nsample \
+  --seed $seed \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-minus8.pkl
+
+python npe/generate_dataset.py \
   --b-ppe -9 \
   --n-ppe 1 \
   --minus-gr \
@@ -126,6 +250,10 @@ python npe/generate_dataset.py \
   --m2-min $M_MIN --m2-max $M_MAX \
   --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
   --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
   --fmin $F_MIN --fmax $F_MAX \
   --num-freqs 640 \
   --logspace-freqs \
@@ -137,6 +265,28 @@ python npe/generate_dataset.py \
   --output-file $dataset_folder/ppe-minus9.pkl
 
 python npe/generate_dataset.py \
+  --b-ppe -10 \
+  --n-ppe 1 \
+  --minus-gr \
+  --m1-min $M_MIN --m1-max $M_MAX \
+  --m2-min $M_MIN --m2-max $M_MAX \
+  --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
+  --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs 640 \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --ppe-ref-min 10 \
+  --num-samples $nsample \
+  --seed $seed \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-minus10.pkl
+
+python npe/generate_dataset.py \
   --b-ppe -11 \
   --n-ppe 1 \
   --minus-gr \
@@ -144,6 +294,10 @@ python npe/generate_dataset.py \
   --m2-min $M_MIN --m2-max $M_MAX \
   --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
   --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
   --fmin $F_MIN --fmax $F_MAX \
   --num-freqs 640 \
   --logspace-freqs \
@@ -155,6 +309,28 @@ python npe/generate_dataset.py \
   --output-file $dataset_folder/ppe-minus11.pkl
 
 python npe/generate_dataset.py \
+  --b-ppe -12 \
+  --n-ppe 1 \
+  --minus-gr \
+  --m1-min $M_MIN --m1-max $M_MAX \
+  --m2-min $M_MIN --m2-max $M_MAX \
+  --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
+  --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs 640 \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --ppe-ref-min 10 \
+  --num-samples $nsample \
+  --seed $seed \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-minus12.pkl
+
+python npe/generate_dataset.py \
   --b-ppe -13 \
   --n-ppe 1 \
   --minus-gr \
@@ -162,6 +338,10 @@ python npe/generate_dataset.py \
   --m2-min $M_MIN --m2-max $M_MAX \
   --chi1z-min $CHI_MIN --chi1z-max $CHI_MAX \
   --chi2z-min $CHI_MIN --chi2z-max $CHI_MAX \
+  --l1-min $L_MIN --l1-max $L_MAX \
+  --l2-min $L_MIN --l2-max $L_MAX \
+  --cq1-min $CQ_MIN --cq1-max $CQ_MAX \
+  --cq2-min $CQ_MIN --cq2-max $CQ_MAX \
   --fmin $F_MIN --fmax $F_MAX \
   --num-freqs 640 \
   --logspace-freqs \

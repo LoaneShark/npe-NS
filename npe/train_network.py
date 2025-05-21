@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 import PIL.Image
-if not hasattr(PIL.Image, 'Resampling'):  # Pillow<9.0
+if not hasattr(PIL.Image, 'Resampling'):  # Fix for Pillow<9.0
     PIL.Image.Resampling = PIL.Image
 
 import matplotlib.pyplot as plt
@@ -34,8 +34,10 @@ def get_cli():
                         help="Title of the run")
     parser.add_argument("--run-type", type=str, default="BH",
                         help="Toggle BH or NS binaries")
-    parser.add_argument("--seed", type=int, default=1234,
-                        help="Set RNG seed for training")
+    parser.add_argument("--dataset_seed", type=int, default=1234,
+                        help="Set RNG seed for dataset generation.")
+    parser.add_argument("--training_seed", type=int, default=-1,
+                        help="Set RNG seed for training.")
     args = parser.parse_args()
     return args
 
@@ -321,6 +323,7 @@ def main():
     # args.run_title = "npE_network"
     args.resume_title = args.run_title
     args.resume_epochs = 0
+    # TODO: CLI arg support to modify epochs/hyperparams
     args.add_epochs = 50
     args.epochs_per_latent_plot = [(10, 1), (None, 10)]
     args.epochs_per_checkpoint = 50
@@ -331,6 +334,7 @@ def main():
     args.batch_size_val = 1024
     args.batches_per_summary = 0.1
 
+    # TODO: Play around with these
     args.lr = 1e-4
     args.wd = 1e-4
     args.gamma = 0.9
@@ -343,6 +347,7 @@ def main():
     args.diagnosis_kwargs = dict(with_mu=False)
 
     args.model_type = VAE
+    # TODO: CLI arg support for variable model architecture structure? BNS vs. BBH
     args.model_kwargs = dict(
         depth=4, width=512, 
         data_dim=640, grid_dim=2, 
@@ -353,7 +358,8 @@ def main():
     args.loss_fn = vae_loss_fn
     args.diagnosis_fn = vae_diagnosis_fn
     args.training_device = None
-    args.training_seed = None
+    #args.training_seed = None
+    args.training_seed = args.training_seed if args.training_seed > 0 else None
 
     args.npoints_for_latent_plot = int(1e2)
     args.npoints_for_generation = 16
@@ -364,21 +370,33 @@ def main():
     if args.run_type == 'NS':
         args.dataset_filenames = [
             "ppe-minus13.pkl",
+            "ppe-minus12.pkl",
             "ppe-minus11.pkl",
+            "ppe-minus10.pkl",
             "ppe-minus9.pkl",
+            "ppe-minus8.pkl",
             "ppe-minus7.pkl",
+            "ppe-minus6.pkl",
             "ppe-minus5.pkl",
+            "ppe-minus4.pkl",
             "ppe-minus3.pkl",
+            "ppe-minus2.pkl",
             "ppe-minus1.pkl",
         ]
     else:
         args.dataset_filenames = [
             "ppe-minus13.pkl",
+            "ppe-minus12.pkl",
             "ppe-minus11.pkl",
+            "ppe-minus10.pkl",
             "ppe-minus9.pkl",
+            "ppe-minus8.pkl",
             "ppe-minus7.pkl",
+            "ppe-minus6.pkl",
             "ppe-minus5.pkl",
+            "ppe-minus4.pkl",
             "ppe-minus3.pkl",
+            "ppe-minus2.pkl",
             "ppe-minus1.pkl",
         ]
     args.dataset_type = PhasingDataset
@@ -386,7 +404,7 @@ def main():
     args.dataset_norm_fac = {}
     args.dataset_sample_size = 0.25
     args.dataset_subset_split = [0.8, 0.1, 0.1]
-    args.dataset_seed = args.seed
+    args.dataset_seed = args.dataset_seed if args.dataset_seed > 0 else None
 
     train(args)
 

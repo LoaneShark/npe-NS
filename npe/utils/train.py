@@ -228,7 +228,7 @@ def get_latent_sample(model, ref_distrib, size):
         # FIXME: implement other-than-2d behavior
         return dict()
     r_ref = np.sqrt(np.mean(np.sum(mu_ref**2, -1)))
-#     r_ref = 1.
+    # r_ref = 1.
     angles = np.linspace(0, 2*np.pi, size, endpoint=False)
     z = r_ref * np.exp(1j*angles)
     z = np.vstack([np.real(z), np.imag(z)]).T
