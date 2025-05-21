@@ -95,6 +95,7 @@ logger.info('Loading VAE: %s', network_name)
 network_file = os.path.join(PE_DIR, network_name)
 network_kwargs = dict(depth=4, width=512,
                       data_dim=640, grid_dim=2)
+
 vae_analyzer = PhaseModificationAnalysis(network_file, network_kwargs)
 
 def source_model_rec(frequency_array, mass_1, mass_2, luminosity_distance, 
@@ -189,7 +190,6 @@ injection_parameters['z_2'] = z2
 injection_parameters['z_abs'] = np.sqrt(z1*z1 + z2*z2)
 injection_parameters['z_theta'] = np.mod(np.arctan2(z2, z1), 2*np.pi)
 
-# Fix to 128s for BNS
 duration = bilby.gw.detector.get_safe_signal_duration(
         injection_parameters['mass_1'],
         injection_parameters['mass_2'],
@@ -198,7 +198,7 @@ duration = bilby.gw.detector.get_safe_signal_duration(
         0.,0.,flow=10)
 start_time = injection_parameters['geocent_time'] + 2 - duration
 mtot = injection_parameters['mass_1'] + injection_parameters['mass_2']
-fcut = 0.018 / (mtot * MSUN_S) # inspiral cutoff in phenomd
+fcut = 0.018 / (mtot * MSUN_S) # inspiral cutoff in IMRPhenomD
 sampling_frequency = min(4096, int(2 * fcut))
 reference_frequency = 20
 minimum_frequency = 10
@@ -273,6 +273,8 @@ if save_results:
     #result.save_to_file()
 
 result.plot_corner()
+
+result.plot_waveform_posterior(n_samples=1000)
 
 # Plot reconstructed waveform posterior over detector noise/ASD
 from bilby.core.result import result_file_name
