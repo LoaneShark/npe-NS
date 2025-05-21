@@ -185,12 +185,12 @@ MSUN_S  = MSUN_KM / lal.C_SI * 1e3
 class PhaseModificationAnalysis:
     device = torch.device('cpu')
 
-    def __init__(self, filepath, model_kwargs, norm_fac=1.):
+    def __init__(self, filepath, model_kwargs, norm_fac=1., min_fgeom=4e-4, max_fgeom=1.8e-2):
         self.model = VAE(**model_kwargs).to(self.device)
         self.model.load_state_dict(torch.load(filepath, map_location=self.device)['model'])
         self.model.eval()
         self.model.train(False)
-        self.model_loggeom_freqs = np.linspace(np.log10(4e-4), np.log10(1.8e-2), 640)
+        self.model_loggeom_freqs = np.linspace(np.log10(min_fgeom), np.log10(max_fgeom), 640)
         self.norm_fac = norm_fac
 
     @classmethod

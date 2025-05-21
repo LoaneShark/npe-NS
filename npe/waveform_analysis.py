@@ -22,6 +22,12 @@ def get_fc_layers(input_dim, output_dim, width, depth,
             activation(),
         ]
     layers.append(nn.Linear(width, output_dim))
+    #print('get_fc_layers:')
+    #print('   input_dim: ', input_dim)
+    #print('   output_dim: ', output_dim)
+    #print('   width: ', width)
+    #print('   depth: ', depth)
+    #print('   layers: ', layers)
     layers = nn.Sequential(*layers)
     return layers
 
@@ -47,6 +53,8 @@ class Encoder(nn.Module):
     def forward(self, x, cond):
         if self.use_cond:
             x = torch.cat([x, cond], dim=-1)
+        #print('forward --> dtype(x)', x.dtype)
+        #print('forward --> dtype(cond)', cond.dtype)
         x = self.fc(x)
         mu, logvar = x[:,:self.latent_dim], x[:,self.latent_dim:]
         logvar = torch.cat([logvar, logvar], dim=-1)
@@ -128,6 +136,8 @@ class VAE(nn.Module):
         x = x.view(-1, self.raw_encoder.data_dim)
         x = torch.cat([x, -x], dim=0)
         cond = torch.cat([cond, cond], dim=0)
+        #print('encoder --> dtype(x)', x.dtype)
+        #print('encoder --> dtype(cond)', cond.dtype)
         mu, logvar = self.raw_encoder(x, cond)
         mu = (mu[:batch_size] - mu[batch_size:]) / 2
         mu = mu / torch.sqrt(torch.sum(mu*mu, dim=-1, keepdim=True))
@@ -151,7 +161,7 @@ class VAE(nn.Module):
         batch_size = z.shape[0]
         x1, x2 = self.grid_decoder(z, cond)
         if xin is None:
-            xin = torch.linspace(0, 1, self.data_dim, device=x1.device, dtype=torch.float32)
+            xin = torch.linspace(0, 1, self.data_dim, device=x1.device)
             xin = xin.repeat(batch_size, 1)
         xout_comp = x1[:,None,:] * torch.exp(x2[:,None,:] * xin[:,:,None])
         xout = torch.sum(xout_comp, dim=-1).view(batch_size, 1, -1)
@@ -181,12 +191,13 @@ MSUN_S  = MSUN_KM / lal.C_SI * 1e3
 class PhaseModificationAnalysis:
     device = torch.device('cpu')
 
-    def __init__(self, filepath, model_kwargs, norm_fac=1.):
+    def __init__(self, filepath, model_kwargs, min_fgeom=4e-4, max_fgeom=1.8e-2, norm_fac=1.):
         self.model = VAE(**model_kwargs).to(self.device)
         self.model.load_state_dict(torch.load(filepath, map_location=self.device)['model'])
         self.model.eval()
         self.model.train(False)
-        self.model_loggeom_freqs = np.linspace(np.log10(4e-4), np.log10(1.8e-2), 640)
+        self.model_loggeom_freqs = np.linspace(np.log10(min_fgeom), np.log10(max_fgeom), 640)
+        #self.model_loggeom_freqs = np.linspace(np.log10(4e-4), np.log10(1.8e-1), 640)
         self.norm_fac = norm_fac
 
     @classmethod
@@ -213,9 +224,9 @@ class PhaseModificationAnalysis:
         z_abs = np.sqrt(z_1*z_1 + z_2*z_2)
         if z_abs == 0.:
             return np.zeros_like(freqs)
-        z = torch.tensor([z_1/z_abs, z_2/z_abs], dtype=torch.float32, device=self.device).view(1, -1)
+        z = torch.tensor([z_1/z_abs, z_2/z_abs], device=self.device, dtype=torch.float32).view(1, -1)
         l = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2)
-        l = torch.tensor(l, dtype=torch.float32, device=self.device).view(1, -1)
+        l = torch.tensor(l, device=self.device, dtype=torch.float32).view(1, -1)
         geom_freqs = freqs * (mass_1 + mass_2) * MSUN_S
         geom_freqs_cutoff = 10**self.model_loggeom_freqs[-1]
         # mask_low = geom_freqs < 10**self.model_loggeom_freqs[0]
@@ -226,11 +237,14 @@ class PhaseModificationAnalysis:
         loggeom_freqs = np.log10(np.append(geom_freqs[mask_mid], geom_freqs_cutoff))
         loggeom_freq_range = self.model_loggeom_freqs[-1] - self.model_loggeom_freqs[0]
         xin = (loggeom_freqs - self.model_loggeom_freqs[0]) / loggeom_freq_range
-        xin = torch.tensor(xin, dtype=torch.float32, device=self.device).view(1, -1)
+        xin = torch.tensor(xin, device=self.device, dtype=torch.float32).view(1, -1)
         xout, dext = self.model.extended_decoder(z, l, xin)
+        xout2, dext2 = self.model.extended_decoder(z, l)
+        #print(xout - xout2)
         xout, dext = xout.view(-1).cpu().detach().numpy().flatten(), dext.item()
         phases_mod = np.zeros_like(geom_freqs)
         phases_mod[mask_mid] = xout[:-1] - xout[-1] - dext / loggeom_freq_range / np.log(10) * (geom_freqs[mask_mid] / geom_freqs_cutoff - 1.)
+        #phases_mod[mask_mid] = xout[:-1]
         phases_mod *= z_abs * self.norm_fac
         return phases_mod
 
@@ -241,9 +255,15 @@ class PhaseModificationAnalysis:
         norm = np.sqrt(np.mean(phases*phases, axis=-1))
         if norm == 0.:
             return 0., 0.
-        phases = torch.tensor(phases, dtype=torch.float32, device=self.device).view(1, 1, -1)
+        local_dtype = phases.dtype if phases.dtype in [torch.float32, torch.float64] else torch.float32
+        #phases = torch.tensor(phases, device=self.device).view(1, 1, -1)
+        phases = torch.tensor(phases, dtype=local_dtype, device=self.device).view(1, 1, -1)
         labels = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2)
-        labels = torch.tensor(labels, dtype=torch.float32, device=self.device).view(1, -1)
+        #labels = torch.tensor(labels, device=self.device).view(1, -1)
+        labels = torch.tensor(labels, dtype=local_dtype, device=self.device).view(1, -1)
+
+        #print('extract_latent --> dtype(phases)', phases.dtype)
+        #print('extract_latent --> dtype(labels)', labels.dtype)
         z, _ = self.model.encoder(phases, labels)
         norm_std = self.model.decoder(z, labels)
         norm_std = torch.sqrt(torch.mean(norm_std*norm_std, dim=-1)).squeeze().item()
