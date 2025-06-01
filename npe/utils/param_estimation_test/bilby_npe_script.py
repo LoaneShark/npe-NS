@@ -274,7 +274,7 @@ if save_results:
 
 result.plot_corner()
 
-result.plot_waveform_posterior(n_samples=1000)
+#result.plot_waveform_posterior(n_samples=1000)
 
 # Plot reconstructed waveform posterior over detector noise/ASD
 from bilby.core.result import result_file_name
