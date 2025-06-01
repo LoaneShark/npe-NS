@@ -95,7 +95,7 @@ def get_cli():
     args = parser.parse_args()
     return args
 
-
+# TODO: Enforce m1 > m2 as expected by LALSim convention?
 def _get_masses_and_spins(
         m1_min, m2_min, m1_max, m2_max,
         chi1z_min, chi2z_min, chi1z_max, chi2z_max,
@@ -118,7 +118,7 @@ def _get_deformation_terms(
     CQ2 = np.random.uniform(CQ2_min, CQ2_max, num_samples)
     return L1, L2, CQ1, CQ2
 
-def _get_pn_coeffs(m1, m2, chi1z, chi2z, l1, l2, cq1, cq2):
+def _get_pn_coeffs(m1, m2, chi1z, chi2z, l1=0., l2=0., cq1=0., cq2=0.):
     num_samples = len(m1)
     param_vecs = [lal.CreateREAL8Vector(num_samples) for _ in range(8)]
     param_vecs[0].data = m1
@@ -127,6 +127,7 @@ def _get_pn_coeffs(m1, m2, chi1z, chi2z, l1, l2, cq1, cq2):
     param_vecs[3].data = chi2z
     # tidal deformation and spin deformation
     # TODO: What units/ranges are expected for self-spin quadrupole deformabilities?
+    #       Traditionally: ~ 1-10 ---> is I-Love-Q employed at all?
     param_vecs[4].data = l1
     param_vecs[5].data = l2
     param_vecs[6].data = cq1
@@ -142,7 +143,7 @@ def _get_pn_coeffs(m1, m2, chi1z, chi2z, l1, l2, cq1, cq2):
     coeffs_v, coeffs_vlogv, coeffs_vlogvsq = coeffs.reshape(3,-1,num_samples)
     return coeffs_v.T, coeffs_vlogv.T, coeffs_vlogvsq.T
 
-# TODO: does this need to be mofied further for BNS case?
+# TODO: does this need to be modified further in the BNS case?
 def _get_coeff_bound(b, coeffs_v, v_min, v_max):
     bound = np.zeros_like(b, dtype=float)
     mask_fbd = (b == 0) | (b >= 3)
@@ -208,6 +209,7 @@ def _generate_meta_data_chunks(
     v_min = (np.pi * ref_min) ** (1/3)
     v_max = (np.pi * ref_max) ** (1/3)
 
+    #pn_coeffs_v, _, _ = _get_pn_coeffs(m1, m2, chi1z, chi2z)
     pn_coeffs_v, _, _ = _get_pn_coeffs(m1, m2, chi1z, chi2z, l1, l2, cq1, cq2)
     #print('pn_coeffs_v: ', pn_coeffs_v.shape)
     #print(pn_coeffs_v)
@@ -221,7 +223,8 @@ def _generate_meta_data_chunks(
     dpsi_bars = np.random.uniform(-dpsi_bar_bounds, dpsi_bar_bounds)
     ppe_coeffs = np.concatenate([gamma_bar[:, None], dpsi_bars], axis=-1)
 
-    labels = np.vstack([m1, m2, chi1z, chi2z, l1, l2, b]).T
+    #labels = np.vstack([m1, m2, chi1z, chi2z]).T
+    labels = np.vstack([m1, m2, chi1z, chi2z, l1, l2, cq1, cq2, b]).T
     labels = np.concatenate([labels, ppe_bounds, ppe_coeffs], axis=-1)
     return np.array_split(labels, num_chunks)
 
@@ -230,7 +233,8 @@ def _populate_chunk(metadata_array,
                     fmin=10., fmax=1000., 
                     num_freqs=1000, log_spacing=False,
                     freq_in_natural_units=False,
-                    minus_gr=False, labels_only=False):
+                    minus_gr=False, labels_only=False,
+                    n_params=4):
     """Generate and populate the phasing
     
     Parameters
@@ -247,33 +251,33 @@ def _populate_chunk(metadata_array,
         log/linear spacing of frequency points
     freq_in_natural_units : bool
         frequency is in geometric/SI units i.e. Hz
-    insert_func : callable
-        lalsimulation function to insert modified GR parameters
-        into a LALDict. Required parameter.
-    beta_parameter_func : callable
-        Function in :module:`modified_gr_utils` that returns the
-        beta parameter corresponding to the modified theory.
-        Required parameter.
+    n_params : int
+        number of intrinsic binary parameters. 4 for BBH, 8 for BNS.
     """
     # FIXME
     assert minus_gr
 
-    n_ppe = (metadata_array.shape[-1] - 9) // 2 + 2
+    if n_params == 8:
+        col_list = ['m1', 'm2', 's1z', 's2z', 'L1', 'L2', 'cQ1', 'cQ2', 'b_ppe']
+    else:
+        col_list = ['m1', 'm2', 's1z', 's2z', 'b_ppe']
+
+    n_ppe = (metadata_array.shape[-1] - (n_params + 3)) // 2 + 2
     ppe_keys = [f'dpsi_bar_{i}' for i in range(2, n_ppe)]
     ppe_bound_keys = [k+'_bound' for k in ppe_keys]
     r = pd.DataFrame(
         data=metadata_array,
-        columns=['m1', 'm2', 's1z', 's2z', 'L1', 'L2', 'b_ppe'] \
+        columns=col_list \
                 + ['gamma_bar_bound'] + ppe_bound_keys \
                 + ['gamma_bar'] + ppe_keys)
     if labels_only:
         return r
 
     mtot = np.sum(metadata_array[:,:2], axis=-1, keepdims=True)
-    b = metadata_array[:,[6]]
+    b = metadata_array[:,[n_params]]
     k = b + np.arange(n_ppe)[None,:]
-    gamma_bar = metadata_array[:,[6+n_ppe]]
-    dpsi_bars = metadata_array[:,7+n_ppe:]
+    gamma_bar = metadata_array[:,[n_params+n_ppe]]
+    dpsi_bars = metadata_array[:,n_params+1+n_ppe:]
     delta_bars = np.concatenate([gamma_bar,
                                  np.zeros_like(gamma_bar),
                                  gamma_bar * dpsi_bars], axis=-1)
@@ -317,6 +321,7 @@ def main():
         args.pool
     )
     
+    # Generate dataset in parallel
     with multiprocessing.Pool(args.pool) as p:
         rs = [
             p.apply_async(

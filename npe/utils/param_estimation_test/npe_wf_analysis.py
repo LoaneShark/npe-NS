@@ -87,6 +87,7 @@ class VAE(nn.Module):
                  freeze_shape=False, freeze_scale=False,
                  activation=nn.ReLU, batchnorm=nn.Identity):
         super().__init__()
+        # TODO: Allow for variation in latent dim?
         assert latent_dim == 2
         if width_scale is None:
             width_scale = width
@@ -98,14 +99,17 @@ class VAE(nn.Module):
         self.grid_dim = grid_dim
         self.freeze_shape = freeze_shape
         self.freeze_scale = freeze_scale
+        # Dephasing data Encoder
         self.raw_encoder = Encoder(width, depth, 
                                    latent_dim, data_dim, 
                                    cond_dim, use_cond=False,
                                    activation=activation, batchnorm=batchnorm)
+        # Scale function Decoder
         self.raw_decoder0 = Decoder(width_scale, depth_scale, 
                                     latent_dim, 1,
                                     cond_dim, use_cond=True,
                                     activation=activation, batchnorm=batchnorm)
+        # Shape function Decoders
         self.raw_decoder1 = Decoder(width, depth, 
                                     latent_dim, grid_dim, 
                                     cond_dim, use_cond=False,
@@ -122,6 +126,7 @@ class VAE(nn.Module):
             for p in self.raw_decoder0.parameters():
                 p.requires_grad = False
         
+    # Given dephasing data, obtain latent space distribution mean and stdev
     def encoder(self, x, cond):
         batch_size = x.shape[0]
         x = x / torch.sqrt(torch.mean(x*x, dim=-1, keepdim=True))
@@ -150,8 +155,8 @@ class VAE(nn.Module):
         return x1, x2
 
     def extended_decoder(self, z, cond, xin=None):
-        # this returns the dephasing (xout) given the inputing freqs (xin)
-        # and the derivative of the dephasing (dext) at the ending freq
+        # this returns the extended dephasing (xout) given the input freqs (xin)
+        # and the derivative of the raw dephasing (dext) at the ending freq
         batch_size = z.shape[0]
         x1, x2 = self.grid_decoder(z, cond)
         if xin is None:
@@ -162,15 +167,18 @@ class VAE(nn.Module):
         dext = torch.sum(x2 * xout_comp[:,-1,:], dim=-1).view(batch_size, 1)
         return xout, dext
     
+    # Obtain dephasing data from a latent space sample
     def decoder(self, z, cond, xin=None):
         xout, _ = self.extended_decoder(z, cond, xin)
         return xout
     
+    # Draw a latent space sample from a normal distribution
     def varier(self, mu, logvar):
         z = mu + torch.exp(0.5*logvar) * torch.randn_like(mu)
         z = z / torch.sqrt(torch.sum(z*z, dim=-1, keepdim=True))
         return z
 
+    # Pass data through the full VAE
     def forward(self, x, cond):
         mu, logvar = self.encoder(x, cond)
         z = self.varier(mu, logvar)

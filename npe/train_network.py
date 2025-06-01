@@ -346,11 +346,18 @@ def main():
     )
     args.diagnosis_kwargs = dict(with_mu=False)
 
-    args.model_type = VAE
     # TODO: CLI arg support for variable model architecture structure? BNS vs. BBH
+    # i.e. cond_dim ~ # of intrinsic binary parameters, so we need to expand it for BNS tidal deformability
+    args.structure_kwargs = dict(
+        depth=4, width=512,
+        data_dim=640, grid_dim=2,
+        # cond_dim=4
+        cond_dim=8,
+        )
+
+    args.model_type = VAE
     args.model_kwargs = dict(
-        depth=4, width=512, 
-        data_dim=640, grid_dim=2, 
+        **args.structure_kwargs,
         freeze_scale=True,
     )
     args.optimizer_type = torch.optim.AdamW
@@ -369,35 +376,45 @@ def main():
     args.dataset_recipe_save_file = None
     if args.run_type == 'NS':
         args.dataset_filenames = [
-            "ppe-minus13.pkl",
-            "ppe-minus12.pkl",
-            "ppe-minus11.pkl",
-            "ppe-minus10.pkl",
-            "ppe-minus9.pkl",
-            "ppe-minus8.pkl",
-            "ppe-minus7.pkl",
-            "ppe-minus6.pkl",
-            "ppe-minus5.pkl",
-            "ppe-minus4.pkl",
-            "ppe-minus3.pkl",
-            "ppe-minus2.pkl",
-            "ppe-minus1.pkl",
+            'ppe-minus13.pkl',
+            'ppe-minus12.pkl',
+            'ppe-minus11.pkl',
+            'ppe-minus10.pkl',
+            'ppe-minus9.pkl',
+            'ppe-minus8.pkl',
+            'ppe-minus7.pkl',
+            'ppe-minus6.pkl',
+            'ppe-minus5.pkl',
+            'ppe-minus4.pkl',
+            'ppe-minus3.pkl',
+            'ppe-minus2.pkl',
+            'ppe-minus1.pkl',
+            ## TODO: Remove below when done debugging
+            #'ppe-minus14.pkl',
+            #'ppe-minus15.pkl',
+            #'ppe-minus0.pkl',
+            #'ppe-plus1.pkl',
         ]
     else:
         args.dataset_filenames = [
-            "ppe-minus13.pkl",
-            "ppe-minus12.pkl",
-            "ppe-minus11.pkl",
-            "ppe-minus10.pkl",
-            "ppe-minus9.pkl",
-            "ppe-minus8.pkl",
-            "ppe-minus7.pkl",
-            "ppe-minus6.pkl",
-            "ppe-minus5.pkl",
-            "ppe-minus4.pkl",
-            "ppe-minus3.pkl",
-            "ppe-minus2.pkl",
-            "ppe-minus1.pkl",
+            'ppe-minus13.pkl',
+            'ppe-minus12.pkl',
+            'ppe-minus11.pkl',
+            'ppe-minus10.pkl',
+            'ppe-minus9.pkl',
+            'ppe-minus8.pkl',
+            'ppe-minus7.pkl',
+            'ppe-minus6.pkl',
+            'ppe-minus5.pkl',
+            'ppe-minus4.pkl',
+            'ppe-minus3.pkl',
+            'ppe-minus2.pkl',
+            'ppe-minus1.pkl',
+            ## TODO: Remove below when done debugging
+            #'ppe-minus14.pkl',
+            #'ppe-minus15.pkl',
+            #'ppe-minus0.pkl',
+            #'ppe-plus1.pkl',
         ]
     args.dataset_type = PhasingDataset
     args.dataset_n_ppe = 1
@@ -438,10 +455,15 @@ def main():
     args.diagnosis_kwargs = dict(with_mu=False)
 
     args.model_type = VAE
+    #args.model_kwargs = dict(
+    #    depth=4, width=512, 
+    #    data_dim=640, grid_dim=2, 
+    #    freeze_shape=True,
+    #)
+
     args.model_kwargs = dict(
-        depth=4, width=512, 
-        data_dim=640, grid_dim=2, 
-        freeze_shape=True,
+        **args.structure_kwargs,
+        freeze_scale=True,
     )
 
     train(args)
