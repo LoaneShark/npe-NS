@@ -351,8 +351,8 @@ def main():
     args.structure_kwargs = dict(
         depth=4, width=512,
         data_dim=640, grid_dim=2,
-        # cond_dim=4
-        cond_dim=8,
+        cond_dim=4,
+        # cond_dim=8,
         )
 
     args.model_type = VAE
@@ -388,12 +388,7 @@ def main():
             'ppe-minus4.pkl',
             'ppe-minus3.pkl',
             'ppe-minus2.pkl',
-            'ppe-minus1.pkl',
-            ## TODO: Remove below when done debugging
-            #'ppe-minus14.pkl',
-            #'ppe-minus15.pkl',
-            #'ppe-minus0.pkl',
-            #'ppe-plus1.pkl',
+            'ppe-minus1.pkl'
         ]
     else:
         args.dataset_filenames = [
@@ -409,12 +404,7 @@ def main():
             'ppe-minus4.pkl',
             'ppe-minus3.pkl',
             'ppe-minus2.pkl',
-            'ppe-minus1.pkl',
-            ## TODO: Remove below when done debugging
-            #'ppe-minus14.pkl',
-            #'ppe-minus15.pkl',
-            #'ppe-minus0.pkl',
-            #'ppe-plus1.pkl',
+            'ppe-minus1.pkl'
         ]
     args.dataset_type = PhasingDataset
     args.dataset_n_ppe = 1
@@ -463,7 +453,7 @@ def main():
 
     args.model_kwargs = dict(
         **args.structure_kwargs,
-        freeze_scale=True,
+        freeze_shape=True,
     )
 
     train(args)
