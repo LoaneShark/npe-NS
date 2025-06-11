@@ -231,6 +231,7 @@ interferometers.inject_signal(parameters=injection_parameters,
 interferometers.plot_data(outdir=outdir, label=label)
 if save_results:
     interferometers.save_data(outdir=outdir, label=label)
+    interferometers.to_pickle(outdir=outdir, label=label)
 
 priors = bilby.gw.prior.BBHPriorDict(aligned_spin=True, conversion_function=bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters)
 for key in ['psi', 'ra', 'dec', 'theta_jn', 'luminosity_distance']:
@@ -262,7 +263,7 @@ result = bilby.run_sampler(
     sample='acceptance-walk',
     nlive=1000,
     naccept=60,
-    dlogz=0.1,
+    dlogz=0.05,
     npool=NPOOL,
     check_point_delta_t=CHECKPOINT_DELTAT,
     injection_parameters=injection_parameters, outdir=outdir, label=label,
@@ -276,13 +277,28 @@ result.plot_corner()
 
 #result.plot_waveform_posterior(n_samples=1000)
 
-# Plot reconstructed waveform posterior over detector noise/ASD
-from bilby.core.result import result_file_name
-from bilby.gw.result import CBCResult
+if save_results:
+    # Plot reconstructed waveform posterior over detector noise/ASD
+    from bilby.core.result import result_file_name
+    from bilby.gw.result import CBCResult
 
-# Reload results as CBCResult class
-output_file = result_file_name(outdir=outdir, label=label)
-cbc_result = CBCResult.from_json(output_file, outdir=outdir, label=label)
+    # Reload results as CBCResult class
+    output_file = result_file_name(outdir=outdir, label=label)
+    cbc_result = CBCResult.from_json(output_file, outdir=outdir, label=label)
 
-for ifo in interferometers:
-    cbc_result.plot_interferometer_waveform_posterior(interferometer=ifo, n_samples=1000, save=True)
+    # Reload detector strain data
+    result_file_dir = os.path.dirname(output_file)
+    result_file_root = os.path.basename(output_file).replace('_result.json','')
+    ifo_fname = ''.join(cbc_result.interferometers)
+    ifo_file = os.path.join(result_file_dir, f'{result_file_root}_{ifo_fname}.pkl')
+
+    ifo_list = bilby.gw.detector.InterferometerList.from_pickle(ifo_file)
+
+    # Workaround to avoid div by zero errors in plotting function
+    for inj_param in ['chi_1', 'chi_2']:
+        if inj_param in injection_parameters:
+            if injection_parameters[inj_param] == 0:
+                injection_parameters[inj_param] = 1e-8
+
+    for ifo in ifo_list:
+        cbc_result.plot_interferometer_waveform_posterior(interferometer=ifo, n_samples=1000, save=True)
