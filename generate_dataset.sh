@@ -17,8 +17,9 @@ CHI_MIN_NS=-0.1
 CHI_MAX_NS=0.1
 
 # Dimensionless tidal parameters
+L_MIN=0
 L_MAX=5000
-L_MAX=0
+#L_MAX=0
 CQ_MIN=0
 CQ_MAX=0
 

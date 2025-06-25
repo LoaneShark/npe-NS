@@ -80,6 +80,10 @@ def get_cli():
                         help="Frequency is in natural units.")
     parser.add_argument("--minus-gr", action='store_true', default=False,
                         help="Output only correction to GR.")
+    parser.add_argument("--include-tidal", action='store_true', default=False,
+                        help="Include tidal deformation terms in the dataset.")
+    parser.add_argument("--include-tidal-full", action='store_true', default=False,
+                        help="Include tidal and spin induced deformation terms in the dataset.")
 
     # sampling specs
     parser.add_argument("--num-samples", default=100, type=int,
@@ -111,14 +115,14 @@ def _get_deformation_terms(
         L1_min, L2_min, L1_max, L2_max,
         CQ1_min, CQ2_min, CQ1_max, CQ2_max,
         num_samples):
-    """Get uniformly sampled masses and aligned spins"""
+    """Get uniformly sampled tidal and spin deformabilities"""
     L1 = np.random.uniform(L1_min, L1_max, num_samples)
     L2 = np.random.uniform(L2_min, L2_max, num_samples)
     CQ1 = np.random.uniform(CQ1_min, CQ1_max, num_samples)
     CQ2 = np.random.uniform(CQ2_min, CQ2_max, num_samples)
     return L1, L2, CQ1, CQ2
 
-def _get_pn_coeffs(m1, m2, chi1z, chi2z, l1=0., l2=0., cq1=0., cq2=0.):
+def _get_pn_coeffs(m1, m2, chi1z, chi2z, l1=None, l2=None, cq1=None, cq2=None):
     num_samples = len(m1)
     param_vecs = [lal.CreateREAL8Vector(num_samples) for _ in range(8)]
     param_vecs[0].data = m1
@@ -127,11 +131,14 @@ def _get_pn_coeffs(m1, m2, chi1z, chi2z, l1=0., l2=0., cq1=0., cq2=0.):
     param_vecs[3].data = chi2z
     # tidal deformation and spin deformation
     # TODO: What units/ranges are expected for self-spin quadrupole deformabilities?
-    #       Traditionally: ~ 1-10 ---> is I-Love-Q employed at all?
-    param_vecs[4].data = l1
-    param_vecs[5].data = l2
-    param_vecs[6].data = cq1
-    param_vecs[7].data = cq2
+    #       Traditionally: ~ 1-10
+    #       NOTE: If cq1/cq2 are not provided, they are inferred from l1/l2 using I-Love-Q relations.
+    #             If we are going to rely on training data that uses >2PN data, we need a way to account for ppE modifications to these relations.
+    
+    param_vecs[4].data = l1  if l1  is not None else np.zeros_like(param_vecs[4].data)
+    param_vecs[5].data = l2  if l2  is not None else np.zeros_like(param_vecs[5].data)
+    param_vecs[6].data = cq1 if cq1 is not None else np.zeros_like(param_vecs[6].data)
+    param_vecs[7].data = cq2 if cq2 is not None else np.zeros_like(param_vecs[7].data)
 
     '''
     for i in range(4, 8):
@@ -185,7 +192,7 @@ def _generate_meta_data_chunks(
         b_ppe, n_ppe, 
         ppe_ref_min, ppe_ref_min_in_geometric_units,
         ppe_ref_max, ppe_ref_max_in_geometric_units,
-        num_samples, seed, num_chunks):
+        num_samples, seed, num_chunks, num_params):
     """Get meta data in chunks"""
     np.random.seed(seed)
     m1, m2, chi1z, chi2z = _get_masses_and_spins(
@@ -193,11 +200,12 @@ def _generate_meta_data_chunks(
         chi1z_min, chi2z_min, chi1z_max, chi2z_max,
         num_samples
     )
-    l1, l2, cq1, cq2 = _get_deformation_terms(
-        l1_min, l2_min, l1_max, l2_max,
-        cq1_min, cq2_min, cq1_max, cq2_max,
-        num_samples
-    )
+    if num_params > 4:
+        l1, l2, cq1, cq2 = _get_deformation_terms(
+            l1_min, l2_min, l1_max, l2_max,
+            cq1_min, cq2_min, cq1_max, cq2_max,
+            num_samples
+        )
 
     b = np.repeat(b_ppe, num_samples)
     ref_min = np.repeat(ppe_ref_min, num_samples)
@@ -209,8 +217,11 @@ def _generate_meta_data_chunks(
     v_min = (np.pi * ref_min) ** (1/3)
     v_max = (np.pi * ref_max) ** (1/3)
 
-    #pn_coeffs_v, _, _ = _get_pn_coeffs(m1, m2, chi1z, chi2z)
-    pn_coeffs_v, _, _ = _get_pn_coeffs(m1, m2, chi1z, chi2z, l1, l2, cq1, cq2)
+    if num_params > 4:
+        pn_coeffs_v, _, _ = _get_pn_coeffs(m1, m2, chi1z, chi2z, l1, l2, cq1, cq2)
+    else:
+        pn_coeffs_v, _, _ = _get_pn_coeffs(m1, m2, chi1z, chi2z)
+
     #print('pn_coeffs_v: ', pn_coeffs_v.shape)
     #print(pn_coeffs_v)
     gamma_bar_bound = _get_gamma_bar_bound(b, pn_coeffs_v, v_min, v_max)
@@ -223,8 +234,15 @@ def _generate_meta_data_chunks(
     dpsi_bars = np.random.uniform(-dpsi_bar_bounds, dpsi_bar_bounds)
     ppe_coeffs = np.concatenate([gamma_bar[:, None], dpsi_bars], axis=-1)
 
-    #labels = np.vstack([m1, m2, chi1z, chi2z]).T
-    labels = np.vstack([m1, m2, chi1z, chi2z, l1, l2, cq1, cq2, b]).T
+    if num_params > 6:
+        labels = np.vstack([m1, m2, chi1z, chi2z, l1, l2, cq1, cq2, b]).T
+    elif num_params > 4:
+        labels = np.vstack([m1, m2, chi1z, chi2z, l1, l2, b]).T
+    else:
+        labels = np.vstack([m1, m2, chi1z, chi2z, b]).T
+
+    print('labels: ', labels.shape)
+    print('labels: ', labels[0])
     labels = np.concatenate([labels, ppe_bounds, ppe_coeffs], axis=-1)
     return np.array_split(labels, num_chunks)
 
@@ -258,18 +276,33 @@ def _populate_chunk(metadata_array,
     assert minus_gr
 
     if n_params == 8:
-        col_list = ['m1', 'm2', 's1z', 's2z', 'L1', 'L2', 'cQ1', 'cQ2', 'b_ppe']
+        col_list = ['m1', 'm2', 's1z', 's2z', 'l1', 'l2', 'cQ1', 'cQ2', 'b_ppe']
+    elif n_params == 6:
+        col_list = ['m1', 'm2', 's1z', 's2z', 'l1', 'l2', 'b_ppe']
     else:
         col_list = ['m1', 'm2', 's1z', 's2z', 'b_ppe']
 
+    print('n_params: ', n_params)
+    print('col_list: ', col_list)
+    print('metadata_array: ', metadata_array.dtype)
+    print('metadata_array: ', metadata_array.shape)
+    print('metadata_array: ', metadata_array[0])
+
     n_ppe = (metadata_array.shape[-1] - (n_params + 3)) // 2 + 2
+    print('n_ppe: ', n_ppe)
     ppe_keys = [f'dpsi_bar_{i}' for i in range(2, n_ppe)]
+    print('ppe_keys: ', ppe_keys)
     ppe_bound_keys = [k+'_bound' for k in ppe_keys]
+    print('ppe_bound_keys: ', ppe_bound_keys)
     r = pd.DataFrame(
         data=metadata_array,
         columns=col_list \
                 + ['gamma_bar_bound'] + ppe_bound_keys \
                 + ['gamma_bar'] + ppe_keys)
+
+    print('r: ', r.shape)
+    print('r: ', r.head())
+
     if labels_only:
         return r
 
@@ -299,6 +332,8 @@ def _populate_chunk(metadata_array,
 
 def main():
     args = get_cli()
+    n_params = 8 if args.include_tidal_full else 6 if args.include_tidal else 4
+
     if args.ppe_ref_min <= 0:
         args.ppe_ref_min = args.fmin
         args.ppe_ref_min_in_geometric_units = args.freq_in_geometric_units
@@ -318,9 +353,9 @@ def main():
         args.ppe_ref_min, args.ppe_ref_min_in_geometric_units,
         args.ppe_ref_max, args.ppe_ref_max_in_geometric_units,
         args.num_samples, args.seed,
-        args.pool
+        args.pool, n_params
     )
-    
+
     # Generate dataset in parallel
     with multiprocessing.Pool(args.pool) as p:
         rs = [
@@ -335,6 +370,7 @@ def main():
                     freq_in_natural_units=args.freq_in_geometric_units,
                     minus_gr=args.minus_gr,
                     labels_only=args.labels_only,
+                    n_params=n_params,
                 )
             ) for chunk in chunks
         ]
