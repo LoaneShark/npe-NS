@@ -282,26 +282,23 @@ def _populate_chunk(metadata_array,
     else:
         col_list = ['m1', 'm2', 's1z', 's2z', 'b_ppe']
 
-    print('n_params: ', n_params)
-    print('col_list: ', col_list)
-    print('metadata_array: ', metadata_array.dtype)
-    print('metadata_array: ', metadata_array.shape)
-    print('metadata_array: ', metadata_array[0])
+    #print('n_params: ', n_params)
+    #print('col_list: ', col_list)
+    #print('metadata_array: ', metadata_array.dtype)
+    #print('metadata_array: ', metadata_array.shape)
+    #print('metadata_array: ', metadata_array[0])
 
     n_ppe = (metadata_array.shape[-1] - (n_params + 3)) // 2 + 2
-    print('n_ppe: ', n_ppe)
+    #print('n_ppe: ', n_ppe)
     ppe_keys = [f'dpsi_bar_{i}' for i in range(2, n_ppe)]
-    print('ppe_keys: ', ppe_keys)
+    #print('ppe_keys: ', ppe_keys)
     ppe_bound_keys = [k+'_bound' for k in ppe_keys]
-    print('ppe_bound_keys: ', ppe_bound_keys)
+    #print('ppe_bound_keys: ', ppe_bound_keys)
     r = pd.DataFrame(
         data=metadata_array,
         columns=col_list \
                 + ['gamma_bar_bound'] + ppe_bound_keys \
                 + ['gamma_bar'] + ppe_keys)
-
-    print('r: ', r.shape)
-    print('r: ', r.head())
 
     if labels_only:
         return r
