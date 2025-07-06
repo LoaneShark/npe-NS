@@ -1,7 +1,10 @@
 from collections import deque, defaultdict
 from matplotlib import pyplot as plt
 import numpy as np
+import pandas as pd
+from scipy.interpolate import interp1d
 import torch
+import os
 
 from .loss import (
     mean_squared_error as mse_loss,
@@ -359,3 +362,28 @@ def plot_latent_sample(sample, norm=1., **kwargs):
         axes[i].legend()
     return fig
 
+
+def get_ASD(freqs, asd_path, head=7, run_type='BH', use_virgo=False):
+    """
+    Read the ASD file for aLigo and return a dataframe with the frequency and ASD values.
+    """
+    if use_virgo:
+        aligo_path = os.path.join(asd_path, 'adv_sensitivity.txt')
+        data = pd.read_csv(aligo_path, sep='\s+', skiprows=head, header=None)
+        data.columns = ['Frequency', 'Early low', 'Early high/Mid low', 'Mid high', 'Late low', 'Late high', 'Design', 'BNS Optimised']
+    else:
+        aligo_path = os.path.join(asd_path, 'aligo_sensitivity.txt')
+        data = pd.read_csv(aligo_path, sep='\s+', skiprows=head, header=None)
+        data.columns = ['Frequency', 'Early low', 'Early high/Mid low', 'Mid high/Late low', 'Late high', 'Design', 'BNS Optimised']
+
+    if run_type == 'BH':
+        asd_df = data[['Frequency', 'Design']].copy()
+        #asd_df['Design'] = asd_df['Design']**2  # Convert ASD to PSD
+    else:
+        asd_df = data[['Frequency', 'BNS Optimised']].copy()
+        #asd_df['BNS Optimised'] = asd_df['BNS Optimised']**2  # Convert ASD to PSD
+    
+    asd_interp = interp1d(asd_df['Frequency'], asd_df['Design'], 
+                          bounds_error=False, fill_value=np.inf)
+
+    return asd_interp[freqs]

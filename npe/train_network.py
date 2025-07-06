@@ -21,6 +21,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from scipy.interpolate import interp1d
 torch.set_default_dtype(torch.float64)
 
 def get_cli():
@@ -40,7 +41,6 @@ def get_cli():
                         help="Set RNG seed for training.")
     args = parser.parse_args()
     return args
-
 
 # ===================
 
@@ -225,6 +225,7 @@ def get_loss_scale(scale1, scale2):
     log_scale2 = torch.log(scale2)
     return F.mse_loss(log_scale1, log_scale2)
 
+# Reconstruction loss for variational autoencoder
 def get_loss_recon_var(v, v_recon):
     shape1, scale1 = get_shape_and_scale(v)
     shape2, scale2 = get_shape_and_scale(v_recon)
@@ -232,12 +233,36 @@ def get_loss_recon_var(v, v_recon):
     loss_scale = get_loss_scale(scale1, scale2)
     return loss_shape, loss_scale
 
+# Reconstruction loss
 def get_loss_recon(v, v_recon):
     shape1, scale1 = get_shape_and_scale(v)
     shape2, scale2 = get_shape_and_scale(v_recon)
     loss_shape = get_loss_shape(v, scale1*shape2)
     loss_scale = get_loss_scale(scale1, scale2)
     return loss_shape, loss_scale
+
+# TODO: Implement effective cycles recon error
+# TODO: Move ASD to network parameters?
+def get_loss_recon_EC(v, v_recon):
+    #shape1, scale1 = get_shape_and_scale(v)
+    #shape2, scale2 = get_shape_and_scale(v_recon)
+    #loss_shape = get_loss_shape(v, scale1*shape2)
+    #loss_scale = get_loss_scale(scale1, scale2)
+
+    # TODO: How to get parameters needed for effective cycles?
+    # For now, assume h_c ~ (Mf)^(-7/6)
+    amplitudes = None
+    #amplitudes = model.loggeom_freqs
+    asd = None
+    #asd = model.asd
+
+    # L_recon (v, v_recon) = \sum_{f} (A(f) / ASD(f)^2) (v(f) - v_recon(f))^2
+    loss_recon = np.sum(
+        (amplitudes / (asd**2)) * 
+        (v - v_recon)**2, axis=-1
+    )
+
+    return loss_recon
 
 def kl_div_diagonal_gaussian_to_standard_gaussian(mu, logvar, dim=None, with_mu=True):
     # changed to ignore the mu effect
@@ -276,6 +301,54 @@ def vae_loss_fn(model, v, l, t, *args,
         loss_recon = recon_coeff * loss_shape_recon + recon_scale_coeff * loss_scale_recon
         
     loss = loss_kld + loss_var + loss_recon
+    return loss
+
+# TODO: Modify vae loss function to use effective cycles as reconstruction loss
+def vae_loss_fn_EC(model, v, l, t, *args, 
+                kl_coeff=1., 
+                shape_coeff=1., scale_coeff=1., 
+                recon_coeff=1., recon_scale_coeff=1.,
+                with_mu=True, recon_use_mse=False,
+                recon_use_effective_cycles=False,
+                **kwargs):
+    v, l, t = align_data_format_with_model(model, v, l, t)
+    
+    # Run encoder to get mu and variance of latent space
+    # Note: v is the dephasing function, l is the labels (e.g., intrinsic parameters)
+    mu, logvar = model.encoder(v, l)
+
+    # KL divergence loss
+    loss_kld = kl_div_diagonal_gaussian_to_standard_gaussian(mu, logvar, dim=-1, with_mu=with_mu)
+    loss_kld = kl_coeff * torch.mean(loss_kld)
+    
+    # Sample from the latent space
+    z = model.varier(mu, logvar)
+
+    # Reconstruction from the latent space sample
+    v_recon = model.decoder(z, l)
+
+    if recon_use_effective_cycles:
+        # Use effective cycles reconstruction loss
+        loss_recon = get_loss_recon_EC(v, v_recon)
+    else:
+        # Sample reconstruction loss
+        # Note: v_recon_var is the reconstruction of the dephasing function from the latent space sample (z)
+        v_recon_var = v_recon
+        loss_shape, loss_scale = get_loss_recon_var(v, v_recon_var)
+        loss_recon_var = shape_coeff * loss_shape + scale_coeff * loss_scale
+
+        # Mean reconstruction loss
+        # Note: v_recon_mean is the reconstruction of the dephasing function from the latent space mean (mu)
+        v_recon_mean = model.decoder(mu, l)
+        if recon_use_mse:
+            loss_recon_mean = recon_coeff * F.mse_loss(v, v_recon_mean)
+        else:
+            loss_shape_recon, loss_scale_recon = get_loss_recon(v, v_recon_mean)
+            loss_recon_mean = recon_coeff * loss_shape_recon + recon_scale_coeff * loss_scale_recon
+        
+        loss_recon = loss_recon_var + loss_recon_mean
+
+    loss = loss_kld + loss_recon
     return loss
 
 
