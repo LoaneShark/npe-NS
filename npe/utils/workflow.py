@@ -7,9 +7,9 @@ def save_state(path, model, optimizer, scheduler):
     }
     torch.save(state_dict, path)
     
-def load_state(path, model, optimizer=None, scheduler=None):
+def load_state(path, model, optimizer=None, scheduler=None, device=None):
     import torch
-    state_dict = torch.load(path)
+    state_dict = torch.load(path, map_location=device)
     model.load_state_dict(state_dict['model'])
     if optimizer is not None: optimizer.load_state_dict(state_dict['optimizer'])
     if scheduler is not None: scheduler.load_state_dict(state_dict['scheduler'])
@@ -85,6 +85,7 @@ def train(args):
     dataset_recipe_save_file = args.dataset_recipe_save_file
     dataset_rootdir = args.dataset_rootdir
     dataset_filenames = args.dataset_filenames
+    dataset_prep_fns = getattr(args, 'dataset_prep_fns', None)
     dataset_type = args.dataset_type
     dataset_n_ppe = getattr(args, 'dataset_n_ppe', None)
     dataset_norm_fac = args.dataset_norm_fac
@@ -127,6 +128,7 @@ def train(args):
         print(log_str); print(); sys.stdout.flush()
         dataset_and_split = DatasetManager(
                     dataset_filenames, root_dir=dataset_rootdir, 
+                    prep_fns=dataset_prep_fns,
                     sample_size=dataset_sample_size, subset_split=dataset_subset_split, random_state=dataset_seed, 
                     dataset_type=dataset_type, dataset_kwargs=dict(n_ppe=dataset_n_ppe, norm_fac=dataset_norm_fac))
         if dataset_recipe_save_file is not None:
@@ -172,7 +174,8 @@ def train(args):
         resume_filepath = os.path.join(resume_cpdir, resume_filename)
         load_state(resume_filepath, model, 
                    optimizer=optimizer if not optimizer_override else None, 
-                   scheduler=scheduler if not scheduler_override else None, )
+                   scheduler=scheduler if not scheduler_override else None, 
+                   device=training_device)
         log_str = "{} Loaded previous run titiled '{}' after {} epochs, from {}".format(
                                                                 datetime.now().strftime('%H:%M:%S'), 
                                                                 resume_title, resume_epochs, 

@@ -5,8 +5,14 @@ import pandas as pd
 from scipy.interpolate import interp1d
 import torch
 import os
+import sys
 
-from .loss import (
+
+utils_dir = os.path.abspath(os.path.expanduser(os.path.join('..', 'utils')))
+if utils_dir not in sys.path:
+    sys.path.append(utils_dir)
+
+from utils.loss import (
     mean_squared_error as mse_loss,
     kl_div_diagonal_gaussian_to_standard_gaussian as kl_loss,
 )

@@ -1,4 +1,5 @@
 import argparse
+
 import os
 import sys
 import shutil
@@ -8,39 +9,41 @@ from glob import glob
 from time import time
 from datetime import datetime
 import warnings
+
 import numpy as np
 import pandas as pd
-
-import PIL.Image
-if not hasattr(PIL.Image, 'Resampling'):  # Fix for Pillow<9.0
-    PIL.Image.Resampling = PIL.Image
-
 import matplotlib.pyplot as plt
+
 import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from scipy.interpolate import interp1d
 torch.set_default_dtype(torch.float64)
+
 
 def get_cli():
     parser = argparse.ArgumentParser()
     # source parameters
     parser.add_argument("--dataset-rootdir", type=str,
                         help="Dataset directory")
+    parser.add_argument("--rescale-rootdir", type=str,
+                        help="Directory of the rescaling files")
+    parser.add_argument("--base-network-path", type=str,
+                        help="Path to the pre-rescaled network")
     parser.add_argument("--output-rootdir", type=str,
                         help="Output directory")
     parser.add_argument("--run-title", type=str, default="npe",
                         help="Title of the run")
     parser.add_argument("--run-type", type=str, default="BH",
-                        help="Toggle BH or NS binaries")
-    parser.add_argument("--dataset_seed", type=int, default=1234,
+                        help="Type of compact binary event")
+    parser.add_argument("--dataset-seed", type=int, default=1234,
                         help="Set RNG seed for dataset generation.")
-    parser.add_argument("--training_seed", type=int, default=-1,
+    parser.add_argument("--training-seed", type=int, default=-1,
                         help="Set RNG seed for training.")
     args = parser.parse_args()
     return args
+
 
 # ===================
 
@@ -225,7 +228,6 @@ def get_loss_scale(scale1, scale2):
     log_scale2 = torch.log(scale2)
     return F.mse_loss(log_scale1, log_scale2)
 
-# Reconstruction loss for variational autoencoder
 def get_loss_recon_var(v, v_recon):
     shape1, scale1 = get_shape_and_scale(v)
     shape2, scale2 = get_shape_and_scale(v_recon)
@@ -233,37 +235,12 @@ def get_loss_recon_var(v, v_recon):
     loss_scale = get_loss_scale(scale1, scale2)
     return loss_shape, loss_scale
 
-# Reconstruction loss
 def get_loss_recon(v, v_recon):
     shape1, scale1 = get_shape_and_scale(v)
     shape2, scale2 = get_shape_and_scale(v_recon)
     loss_shape = get_loss_shape(v, scale1*shape2)
     loss_scale = get_loss_scale(scale1, scale2)
     return loss_shape, loss_scale
-
-# TODO: Implement effective cycles recon error
-def get_loss_recon_EC(v, v_recon):
-    #shape1, scale1 = get_shape_and_scale(v)
-    #shape2, scale2 = get_shape_and_scale(v_recon)
-    #loss_shape = get_loss_shape(v, scale1*shape2)
-    #loss_scale = get_loss_scale(scale1, scale2)
-
-    # TODO: For now, assume h_c ~ (Mf)^(-7/6)
-    amplitudes = None
-    #amplitudes = model.loggeom_freqs
-    asd = None
-    #asd = model.asd
-    
-    if amplitudes is None or asd is None:
-        return None
-    
-    # L_recon (v, v_recon) = \sum_{f} (A(f) / ASD(f)^2) (v(f) - v_recon(f))^2
-    loss_recon = np.sum(
-        (amplitudes / (asd**2)) * 
-        (v - v_recon)**2, axis=-1
-    )
-
-    return loss_recon
 
 def kl_div_diagonal_gaussian_to_standard_gaussian(mu, logvar, dim=None, with_mu=True):
     # changed to ignore the mu effect
@@ -286,70 +263,31 @@ def vae_loss_fn(model, v, l, t, *args,
     v, l, t = align_data_format_with_model(model, v, l, t)
     
     mu, logvar = model.encoder(v, l)
-    loss_kld = kl_div_diagonal_gaussian_to_standard_gaussian(mu, logvar, dim=-1, with_mu=with_mu)
-    loss_kld = kl_coeff * torch.mean(loss_kld)
-    
-    z = model.varier(mu, logvar)
-    v_recon_var = model.decoder(z, l)
-    loss_shape, loss_scale = get_loss_recon_var(v, v_recon_var)
-    loss_var = shape_coeff * loss_shape + scale_coeff * loss_scale
-
-    v_recon = model.decoder(mu, l)
-    if recon_use_mse:
-        loss_recon = recon_coeff * F.mse_loss(v, v_recon)
+    if kl_coeff == 0.:
+        loss_kld = 0.
     else:
-        loss_shape_recon, loss_scale_recon = get_loss_recon(v, v_recon)
-        loss_recon = recon_coeff * loss_shape_recon + recon_scale_coeff * loss_scale_recon
+        loss_kld = kl_div_diagonal_gaussian_to_standard_gaussian(mu, logvar, dim=-1, with_mu=with_mu)
+        loss_kld = kl_coeff * torch.mean(loss_kld)
+    
+    if shape_coeff == 0. and scale_coeff == 0.:
+        loss_var = 0.
+    else:
+        z = model.varier(mu, logvar)
+        v_recon_var = model.decoder(z, l)
+        loss_shape, loss_scale = get_loss_recon_var(v, v_recon_var)
+        loss_var = shape_coeff * loss_shape + scale_coeff * loss_scale
+
+    if recon_coeff == 0. and (recon_use_mse or recon_scale_coeff == 0.):
+        loss_recon == 0.
+    else:
+        v_recon = model.decoder(mu, l)
+        if recon_use_mse:
+            loss_recon = recon_coeff * F.mse_loss(v, v_recon)
+        else:
+            loss_shape_recon, loss_scale_recon = get_loss_recon(v, v_recon)
+            loss_recon = recon_coeff * loss_shape_recon + recon_scale_coeff * loss_scale_recon
         
     loss = loss_kld + loss_var + loss_recon
-    return loss
-
-# TODO: Modify vae loss function to use effective cycles as reconstruction loss
-def vae_loss_fn_EC(model, v, l, t, *args, 
-                kl_coeff=1., 
-                shape_coeff=1., scale_coeff=1., 
-                recon_coeff=1., recon_scale_coeff=1.,
-                with_mu=True, recon_use_mse=False,
-                recon_use_effective_cycles=False,
-                **kwargs):
-    v, l, t = align_data_format_with_model(model, v, l, t)
-    
-    # Run encoder to get mu and variance of latent space
-    # Note: v is the dephasing function, l is the labels (e.g., intrinsic parameters)
-    mu, logvar = model.encoder(v, l)
-
-    # KL divergence loss
-    loss_kld = kl_div_diagonal_gaussian_to_standard_gaussian(mu, logvar, dim=-1, with_mu=with_mu)
-    loss_kld = kl_coeff * torch.mean(loss_kld)
-    
-    # Sample from the latent space
-    z = model.varier(mu, logvar)
-
-    # Reconstruction from the latent space sample
-    v_recon = model.decoder(z, l)
-
-    if recon_use_effective_cycles:
-        # Use effective cycles reconstruction loss
-        loss_recon = get_loss_recon_EC(v, v_recon)
-    else:
-        # Sample reconstruction loss
-        # Note: v_recon_var is the reconstruction of the dephasing function from the latent space sample (z)
-        v_recon_var = v_recon
-        loss_shape, loss_scale = get_loss_recon_var(v, v_recon_var)
-        loss_recon_var = shape_coeff * loss_shape + scale_coeff * loss_scale
-
-        # Mean reconstruction loss
-        # Note: v_recon_mean is the reconstruction of the dephasing function from the latent space mean (mu)
-        v_recon_mean = model.decoder(mu, l)
-        if recon_use_mse:
-            loss_recon_mean = recon_coeff * F.mse_loss(v, v_recon_mean)
-        else:
-            loss_shape_recon, loss_scale_recon = get_loss_recon(v, v_recon_mean)
-            loss_recon_mean = recon_coeff * loss_shape_recon + recon_scale_coeff * loss_scale_recon
-        
-        loss_recon = loss_recon_var + loss_recon_mean
-
-    loss = loss_kld + loss_recon
     return loss
 
 
@@ -385,6 +323,16 @@ def vae_diagnosis_fn(model, v, l, t, *args, with_mu=True, **kwargs):
     return metrics, distrib
 
 
+# ===================
+
+def get_data_rescale_function(data_filename, rescale_rootdir):
+    rescale_filename = data_filename.rpartition('.')[0] + '-phase-rescale-fac.npy'
+    print(f'Loading rescale factors from: {os.path.join(rescale_rootdir, rescale_filename)}')
+    rescale_factors = np.load(os.path.join(rescale_rootdir, rescale_filename))
+    def prep_fn(df):
+        df['phases'] = df['phases'] * rescale_factors
+        return df
+    return prep_fn
 
 # ===================
 
@@ -395,12 +343,79 @@ def main():
     # args = type('TrainingArguments', (), {})
 
     # args.run_title = "npE_network"
+    # args.resume_title = args.run_title
+    # args.resume_epochs = 0
+    # args.add_epochs = 50
+    # args.epochs_per_latent_plot = [(10, 1), (None, 10)]
+    # args.epochs_per_checkpoint = 50
+    # args.optimizer_override = True
+    # args.scheduler_override = True
+
+    # args.batch_size_train = 64
+    # args.batch_size_val = 1024
+    # args.batches_per_summary = 0.1
+
+    # args.lr = 1e-4
+    # args.wd = 1e-4
+    # args.gamma = 0.9
+    # args.loss_kwargs = dict(
+    #     kl_coeff=1e-6, 
+    #     shape_coeff=1., scale_coeff=0., 
+    #     recon_coeff=0., recon_scale_coeff=0.,
+    #     with_mu=False, recon_use_mse=False, 
+    # )
+    # args.diagnosis_kwargs = dict(with_mu=False)
+
+    # args.model_type = VAE
+    # args.model_kwargs = dict(
+    #     depth=4, width=512, 
+    #     data_dim=640, grid_dim=2, 
+    #     freeze_scale=True,
+    # )
+    # args.optimizer_type = torch.optim.AdamW
+    # args.scheduler_type = torch.optim.lr_scheduler.ExponentialLR
+    # args.loss_fn = vae_loss_fn
+    # args.diagnosis_fn = vae_diagnosis_fn
+    # args.training_device = None
+    # args.training_seed = None
+
+    # args.npoints_for_latent_plot = int(1e2)
+    # args.npoints_for_generation = 16
+    # args.show_plot = False
+
+    # args.dataset_recipe_from_file = None
+    # args.dataset_recipe_save_file = None
+    # args.dataset_filenames = [
+    #     "ppe-minus13.pkl",
+    #     "ppe-minus11.pkl",
+    #     "ppe-minus9.pkl",
+    #     "ppe-minus7.pkl",
+    #     "ppe-minus5.pkl",
+    #     "ppe-minus3.pkl",
+    #     "ppe-minus1.pkl",
+    # ]
+    # args.dataset_prep_fns = [
+    #     get_data_rescale_function(filename, args.rescale_rootdir)
+    #     for filename in args.dataset_filenames
+    # ]
+    # args.dataset_type = PhasingDataset
+    # args.dataset_n_ppe = 1
+    # args.dataset_norm_fac = {}
+    # args.dataset_sample_size = 0.25
+    # args.dataset_subset_split = [0.8, 0.1, 0.1]
+    # args.dataset_seed = 1234
+
+    # train(args)
+
+
+    # ===================
+
+    # args.run_title = "npE_network"
     args.resume_title = args.run_title
-    args.resume_epochs = 0
-    # TODO: CLI arg support to modify epochs/hyperparams
+    args.resume_epochs = 100
     args.add_epochs = 50
-    args.epochs_per_latent_plot = [(10, 1), (None, 10)]
-    args.epochs_per_checkpoint = 50
+    args.epochs_per_latent_plot = 10
+    args.epochs_per_checkpoint = 10
     args.optimizer_override = True
     args.scheduler_override = True
 
@@ -408,20 +423,21 @@ def main():
     args.batch_size_val = 1024
     args.batches_per_summary = 0.1
 
-    # TODO: Play around with these
+    args.show_plot = False
+
     args.lr = 1e-4
     args.wd = 1e-4
     args.gamma = 0.9
     args.loss_kwargs = dict(
-        kl_coeff=1e-6, 
-        shape_coeff=1., scale_coeff=0., 
-        recon_coeff=0., recon_scale_coeff=0.,
+        kl_coeff=0., 
+        shape_coeff=0., scale_coeff=0., 
+        recon_coeff=0., recon_scale_coeff=1.,
         with_mu=False, recon_use_mse=False, 
     )
     args.diagnosis_kwargs = dict(with_mu=False)
 
     # TODO: CLI arg support for variable model architecture structure? BNS vs. BBH
-    # i.e. cond_dim ~ # of intrinsic binary parameters, so we need to expand it for BNS tidal deformability
+    # i.e. cond_dim ~ # of intrinsic binary parameters, so we may need to expand it for BNS tidal deformability
     args.structure_kwargs = dict(
         depth=4, width=512,
         data_dim=640, grid_dim=2,
@@ -432,7 +448,7 @@ def main():
     args.model_type = VAE
     args.model_kwargs = dict(
         **args.structure_kwargs,
-        freeze_scale=True,
+        freeze_shape=True,
     )
     args.optimizer_type = torch.optim.AdamW
     args.scheduler_type = torch.optim.lr_scheduler.ExponentialLR
@@ -448,7 +464,7 @@ def main():
 
     args.dataset_recipe_from_file = None
     args.dataset_recipe_save_file = None
-    if args.run_type == 'NS':
+    if args.run_type in ['NS', 'NSBH']:
         args.dataset_filenames = [
             'ppe-minus13.pkl',
             'ppe-minus12.pkl',
@@ -480,55 +496,22 @@ def main():
             'ppe-minus2.pkl',
             'ppe-minus1.pkl'
         ]
+    args.dataset_prep_fns = [
+        get_data_rescale_function(filename, args.rescale_rootdir)
+        for filename in args.dataset_filenames
+    ]
     args.dataset_type = PhasingDataset
-    args.dataset_n_ppe = 1
+    args.dataset_n_ppe = None # just use the dephasing provided by the dataset, no scratch construction from the ppE coefficients
     args.dataset_norm_fac = {}
     args.dataset_sample_size = 0.25
     args.dataset_subset_split = [0.8, 0.1, 0.1]
     args.dataset_seed = args.dataset_seed if args.dataset_seed > 0 else None
 
-    train(args)
-
-
-    # ===================
-
-    # args.run_title = "npE_network"
-    args.resume_title = args.run_title
-    args.resume_epochs = 50
-    args.add_epochs = 50
-    args.epochs_per_latent_plot = 50
-    args.epochs_per_checkpoint = 50
-    args.optimizer_override = True
-    args.scheduler_override = True
-
-    args.batch_size_train = 64
-    args.batch_size_val = 1024
-    args.batches_per_summary = 0.1
-
-    args.show_plot = False
-
-    args.lr = 1e-4
-    args.wd = 1e-4
-    args.gamma = 0.9
-    args.loss_kwargs = dict(
-        kl_coeff=0., 
-        shape_coeff=0., scale_coeff=0., 
-        recon_coeff=0., recon_scale_coeff=1.,
-        with_mu=False, recon_use_mse=False, 
-    )
-    args.diagnosis_kwargs = dict(with_mu=False)
-
-    args.model_type = VAE
-    #args.model_kwargs = dict(
-    #    depth=4, width=512, 
-    #    data_dim=640, grid_dim=2, 
-    #    freeze_shape=True,
-    #)
-
-    args.model_kwargs = dict(
-        **args.structure_kwargs,
-        freeze_shape=True,
-    )
+    resume_cpdir = os.path.join(args.output_rootdir, "checkpoints/{}/".format(args.resume_title))
+    resume_filename = "{}_{}-epochs.pt".format(args.resume_title, args.resume_epochs)
+    resume_filepath = os.path.join(resume_cpdir, resume_filename)
+    os.makedirs(resume_cpdir, exist_ok=True)
+    shutil.copyfile(args.base_network_path, resume_filepath)
 
     train(args)
 

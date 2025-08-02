@@ -131,6 +131,7 @@ class DatasetManager(object):
 
     def __init__(
             self, filenames, root_dir=None,
+            prep_fns=None,
             sample_indices=None, subset_indices=None, 
             sample_size=None, subset_split=[0.8, 0.1, 0.1], random_state=None, 
             dataset_type=PhasingDataset, dataset_kwargs={},
@@ -157,6 +158,10 @@ class DatasetManager(object):
         #     filepaths = filenames
         if type(dataset_type) is str:
             dataset_type = eval(dataset_type)
+        
+        if prep_fns is None:
+            prep_fns = [lambda x:x] * len(filepaths)
+        # else we should assume the prep functions are given in a list as long as filepaths
 
         reproduce = sample_indices is not None and subset_indices is not None
         if reproduce:
@@ -166,8 +171,9 @@ class DatasetManager(object):
                         == sum(len(indices) for indices in subset_indices)
 
             dataframe = []
-            for indices, fp in zip(sample_indices, filepaths):
+            for indices, fp, pfn in zip(sample_indices, filepaths, prep_fns):
                 df = pd.read_pickle(fp)
+                df = pfn(df)
                 dataframe.append(df.iloc[indices,:].copy())
                 del df
             dataframe = pd.concat(dataframe, ignore_index=True)
@@ -200,8 +206,9 @@ class DatasetManager(object):
                 sample_norm = sum(len(pd.read_pickle(fp)) for fp in filepaths)
             else:
                 sample_norm = 1.
-            for fp in filepaths:
+            for fp, pfn in zip(filepaths, prep_fns):
                 df = pd.read_pickle(fp)
+                df = pfn(df)
                 size = int(len(df)*sample_size/sample_norm)
                 indices = random_state.choice(len(df), size, replace=False)
                 sample_indices.append(indices)
