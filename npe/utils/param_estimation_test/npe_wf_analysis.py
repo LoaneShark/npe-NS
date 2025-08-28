@@ -225,9 +225,11 @@ class PhaseModificationAnalysis:
         z_abs = np.sqrt(z_1*z_1 + z_2*z_2)
         if z_abs == 0.:
             return np.zeros_like(freqs)
-        z = torch.tensor([z_1/z_abs, z_2/z_abs], dtype=torch.float32, device=self.device).view(1, -1)
+        #z = torch.tensor([z_1/z_abs, z_2/z_abs], dtype=torch.float32, device=self.device).view(1, -1)
+        z = torch.tensor([z_1/z_abs, z_2/z_abs], device=self.device).view(1, -1)
         l = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2)
-        l = torch.tensor(l, dtype=torch.float32, device=self.device).view(1, -1)
+        #l = torch.tensor(l, dtype=torch.float32, device=self.device).view(1, -1)
+        l = torch.tensor(l, device=self.device).view(1, -1)
         geom_freqs = freqs * (mass_1 + mass_2) * MSUN_S
         geom_freqs_cutoff = 10**self.model_loggeom_freqs[-1]
         # mask_low = geom_freqs < 10**self.model_loggeom_freqs[0]
@@ -238,7 +240,8 @@ class PhaseModificationAnalysis:
         loggeom_freqs = np.log10(np.append(geom_freqs[mask_mid], geom_freqs_cutoff))
         loggeom_freq_range = self.model_loggeom_freqs[-1] - self.model_loggeom_freqs[0]
         xin = (loggeom_freqs - self.model_loggeom_freqs[0]) / loggeom_freq_range
-        xin = torch.tensor(xin, dtype=torch.float32, device=self.device).view(1, -1)
+        #xin = torch.tensor(xin, dtype=torch.float32, device=self.device).view(1, -1)
+        xin = torch.tensor(xin, device=self.device).view(1, -1)
         xout, dext = self.model.extended_decoder(z, l, xin)
         xout, dext = xout.view(-1).cpu().detach().numpy().flatten(), dext.item()
         phases_mod = np.zeros_like(geom_freqs)
@@ -256,9 +259,12 @@ class PhaseModificationAnalysis:
         norm = np.sqrt(np.mean(phases*phases, axis=-1))
         if norm == 0.:
             return 0., 0.
-        phases = torch.tensor(phases, dtype=torch.float32, device=self.device).view(1, 1, -1)
+        local_dtype = phases.dtype if phases.dtype in [torch.float32, torch.float64] else torch.float32
+        #phases = torch.tensor(phases, dtype=local_dtype, device=self.device).view(1, 1, -1)
+        phases = torch.tensor(phases, device=self.device).view(1, 1, -1)
         labels = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2)
-        labels = torch.tensor(labels, dtype=torch.float32, device=self.device).view(1, -1)
+        labels = torch.tensor(labels, device=self.device).view(1, -1)
+        #labels = torch.tensor(labels, dtype=local_dtype, device=self.device).view(1, -1)
         z, _ = self.model.encoder(phases, labels)
         norm_std = self.model.decoder(z, labels)
         norm_std = torch.sqrt(torch.mean(norm_std*norm_std, dim=-1)).squeeze().item()

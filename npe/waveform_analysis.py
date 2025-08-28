@@ -88,6 +88,7 @@ class Decoder(nn.Module):
 
 class VAE(nn.Module):
     
+    # TODO: Support for cond_dim=6 to capture NS tidal deformability params?
     def __init__(self, 
                  width=64, depth=2, 
                  width_scale=None, depth_scale=None, 
@@ -197,16 +198,18 @@ class PhaseModificationAnalysis:
         self.model.eval()
         self.model.train(False)
         self.model_loggeom_freqs = np.linspace(np.log10(min_fgeom), np.log10(max_fgeom), 640)
-        #self.model_loggeom_freqs = np.linspace(np.log10(4e-4), np.log10(1.8e-1), 640)
         self.norm_fac = norm_fac
 
     @classmethod
     def gw_params_to_vae_labels(cls, mass_1, mass_2, chi_1, chi_2):
+        #gw_params_to_vae_labels(cls, mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2):
         mc = bilby.gw.conversion.component_masses_to_chirp_mass(mass_1, mass_2)
         q = mass_2 / mass_1
         chi_sym = 0.5 * (chi_1 + chi_2)
         chi_asym = 0.5 * (chi_1 - chi_2)
-        labels = [np.log(mc), q, chi_sym, chi_asym]
+        #lambda_sym = bilby.gw.conversion.lambda_1_lambda_2_to_lambda_symmetric(lambda_1, lambda_2)
+        #lambda_asym = bilby.gw.conversion.lambda_1_lambda_2_to_lambda_antisymmetric(lambda_1, lambda_2)
+        labels = [np.log(mc), q, chi_sym, chi_asym] # + [lambda_sym, lambda_asym]
         return labels
     
     @classmethod
@@ -215,17 +218,22 @@ class PhaseModificationAnalysis:
         q = labels[1]
         chi_sym = labels[2]
         chi_asym = labels[3]
+        #lambda_sym = labels[4]
+        #lambda_asym = labels[5]
         m1, m2 = bilby.gw.conversion.chirp_mass_and_mass_ratio_to_component_masses(mc, q)
         chi1 = chi_sym + chi_asym
         chi2 = chi_sym - chi_asym
-        return m1, m2, chi1, chi2
+        #l1, l2 = bilby.gw.conversion.lambda_symmetric_lambda_antisymmetric_to_lambda_1_lambda_2(lambda_sym, lambda_asym)
+        return m1, m2, chi1, chi2 #l1, l2
     
     def phase_mod(self, freqs, mass_1, mass_2, chi_1, chi_2, z_1, z_2):
+        #phase_mod(self, freqs, mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2, z_1, z_2):
         z_abs = np.sqrt(z_1*z_1 + z_2*z_2)
         if z_abs == 0.:
             return np.zeros_like(freqs)
         z = torch.tensor([z_1/z_abs, z_2/z_abs], device=self.device, dtype=torch.float32).view(1, -1)
         l = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2)
+        #l = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2)
         l = torch.tensor(l, device=self.device, dtype=torch.float32).view(1, -1)
         geom_freqs = freqs * (mass_1 + mass_2) * MSUN_S
         geom_freqs_cutoff = 10**self.model_loggeom_freqs[-1]
@@ -249,6 +257,7 @@ class PhaseModificationAnalysis:
         return phases_mod
 
     def extract_latent(self, phase_func, mass_1, mass_2, chi_1, chi_2):
+        #extract_latent(self, phase_func, mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2):
         mtot = mass_1 + mass_2
         freqs = 10**self.model_loggeom_freqs / mtot / MSUN_S
         phases = phase_func(freqs) / self.norm_fac
@@ -256,11 +265,12 @@ class PhaseModificationAnalysis:
         if norm == 0.:
             return 0., 0.
         local_dtype = phases.dtype if phases.dtype in [torch.float32, torch.float64] else torch.float32
-        #phases = torch.tensor(phases, device=self.device).view(1, 1, -1)
-        phases = torch.tensor(phases, dtype=local_dtype, device=self.device).view(1, 1, -1)
+        phases = torch.tensor(phases, device=self.device).view(1, 1, -1)
+        #phases = torch.tensor(phases, dtype=local_dtype, device=self.device).view(1, 1, -1)
         labels = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2)
-        #labels = torch.tensor(labels, device=self.device).view(1, -1)
-        labels = torch.tensor(labels, dtype=local_dtype, device=self.device).view(1, -1)
+        #labels = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2)
+        labels = torch.tensor(labels, device=self.device).view(1, -1)
+        #labels = torch.tensor(labels, dtype=local_dtype, device=self.device).view(1, -1)
 
         #print('extract_latent --> dtype(phases)', phases.dtype)
         #print('extract_latent --> dtype(labels)', labels.dtype)
