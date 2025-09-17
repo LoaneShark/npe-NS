@@ -39,6 +39,17 @@ def get_cli():
                         help="Set RNG seed for dataset generation.")
     parser.add_argument("--training_seed", type=int, default=-1,
                         help="Set RNG seed for training.")
+    parser.add_argument("--data-dim", type=int, default=640,
+                        help="Number of frequency points used (dimensionality of input/output layer).")
+    parser.add_argument("--include-tidal", action=argparse.BooleanOptionalAction, default=False, required=False,
+                        help="Include tidal deformation terms in the parameter space.")
+    parser.add_argument("--include-tidal-full", action=argparse.BooleanOptionalAction, default=False, required=False,
+                        help="Include tidal and spin induced deformation terms in the parameter space.")
+    parser.add_argument("--include-tidal-data", action=argparse.BooleanOptionalAction, default=False, required=False,
+                        help="Include tidal deformation waveform data, up to 5PN.")
+    parser.add_argument("--num-epochs", type=int, default=50,
+                        help="Number of epochs to use (each) for training the scale and shape functions.")
+    
     args = parser.parse_args()
     return args
 
@@ -277,7 +288,7 @@ def kl_div_diagonal_gaussian_to_standard_gaussian(mu, logvar, dim=None, with_mu=
         kld = torch.sum(kld, dim=dim)
     return kld
 
-def vae_loss_fn(model, v, l, t, *args, 
+def vae_loss_fn(model: VAE , v, l, t, *args, 
                 kl_coeff=1., 
                 shape_coeff=1., scale_coeff=1., 
                 recon_coeff=1., recon_scale_coeff=1.,
@@ -398,9 +409,10 @@ def main():
     args.resume_title = args.run_title
     args.resume_epochs = 0
     # TODO: CLI arg support to modify epochs/hyperparams
-    args.add_epochs = 50
+    num_epochs = args.num_epochs
+    args.add_epochs = num_epochs
     args.epochs_per_latent_plot = [(10, 1), (None, 10)]
-    args.epochs_per_checkpoint = 50
+    args.epochs_per_checkpoint = num_epochs
     args.optimizer_override = True
     args.scheduler_override = True
 
@@ -422,11 +434,31 @@ def main():
 
     # TODO: CLI arg support for variable model architecture structure? BNS vs. BBH
     # i.e. cond_dim ~ # of intrinsic binary parameters, so we need to expand it for BNS tidal deformability
+    # also, BNS signals may benefit from a denser frequency grid
+    if args.run_type in ['NS', 'NSBH', 'CBC']:
+        data_dim = args.data_dim
+        if args.include_tidal_full:
+            cond_dim = 8
+        elif args.include_tidal:
+            cond_dim = 6
+        else:
+            cond_dim = 4
+        grid_dim = 2
+        depth = 4
+        width = 512
+    elif args.run_type == 'BH':
+        data_dim = args.data_dim
+        cond_dim = 4
+        grid_dim = 2
+        depth = 4
+        width = 512
+    else:
+        raise ValueError('run_type should be one of: \'NS\', \'BH\'')
+    
     args.structure_kwargs = dict(
-        depth=4, width=512,
-        data_dim=640, grid_dim=2,
-        cond_dim=4,
-        # cond_dim=8,
+        depth=depth, width=width,
+        data_dim=data_dim, grid_dim=grid_dim,
+        cond_dim=cond_dim,
         )
 
     args.model_type = VAE
@@ -464,6 +496,15 @@ def main():
             'ppe-minus2.pkl',
             'ppe-minus1.pkl'
         ]
+        if args.include_tidal_data:
+            args.dataset_filenames += [
+                'ppe-minus0.pkl',
+                'ppe-plus1.pkl',
+                'ppe-plus2.pkl',
+                'ppe-plus3.pkl',
+                'ppe-plus4.pkl',
+                'ppe-plus5.pkl'
+            ]
     else:
         args.dataset_filenames = [
             'ppe-minus13.pkl',
@@ -480,7 +521,17 @@ def main():
             'ppe-minus2.pkl',
             'ppe-minus1.pkl'
         ]
+        if args.include_tidal_data:
+            args.dataset_filenames += [
+                #'ppe-minus0.pkl',
+                #'ppe-plus1.pkl',
+                #'ppe-plus2.pkl',
+                #'ppe-plus3.pkl',
+                #'ppe-plus4.pkl',
+                #'ppe-plus5.pkl'
+            ]
     args.dataset_type = PhasingDataset
+    args.dataset_kwargs = {'use_tidal': args.include_tidal, 'use_tidal_full': args.include_tidal_full}
     args.dataset_n_ppe = 1
     args.dataset_norm_fac = {}
     args.dataset_sample_size = 0.25
@@ -494,10 +545,10 @@ def main():
 
     # args.run_title = "npE_network"
     args.resume_title = args.run_title
-    args.resume_epochs = 50
-    args.add_epochs = 50
-    args.epochs_per_latent_plot = 50
-    args.epochs_per_checkpoint = 50
+    args.resume_epochs = num_epochs
+    args.add_epochs = num_epochs
+    args.epochs_per_latent_plot = num_epochs
+    args.epochs_per_checkpoint = num_epochs
     args.optimizer_override = True
     args.scheduler_override = True
 

@@ -11,7 +11,7 @@ CHI_MIN_BH=-0.99
 CHI_MAX_BH=0.99
 
 # Neutron Star parameters
-M_MIN_NS=0.6
+M_MIN_NS=0.5
 M_MAX_NS=3.0
 CHI_MIN_NS=-0.1
 CHI_MAX_NS=0.1
@@ -57,6 +57,8 @@ then
   F_MAX=0.018     # IMRPhenomD inspiral cutoff
   F_NUM=640       # Number of frequency points
 
+  TIDAL_TERMS=""
+
 elif [[ "$systype" == "NS" ]]
 then
   # Point Particle NS parameters
@@ -93,7 +95,11 @@ then
   # TODO: Double check f_min and f_max for IMRPhenomPv2_NRTidalv2 case
   F_MIN=0.00004   # 10 Hz (detector limit)
   F_MAX=0.018     # IMRPhenomD inspiral cutoff
-  F_NUM=1280      # Number of frequency points
+  F_NUM=640       # Number of frequency points
+  #F_NUM=1280      # Number of frequency points
+
+  TIDAL_TERMS="--include-tidal"
+  #TIDAL_TERMS="--include-tidal-full"
 
 elif [[ "$systype" == "NSBH" ]]
 then
@@ -135,9 +141,12 @@ then
   F_MAX=0.018     # IMRPhenomD inspiral cutoff
   F_NUM=640       # Number of frequency points
 
+  TIDAL_TERMS="--include-tidal"
+  #TIDAL_TERMS="--include-tidal-full"
+
 elif [[ "$systype" == "CBC" ]]
 then
-  # Point Particle NS parameters
+  # Point Particle CBC parameters
   # TODO: Should we enforce any sort of similarity in the two object masses?
   # For now, allow mass range to be uniformly distributed across the entire NS and BH mass range.
   M_MIN_1=$M_MIN_NS
@@ -174,6 +183,11 @@ then
   # TODO: Determine what the f_min and f_max should be for this arbitrary CBC case
   F_MIN=0.00004   # 10 Hz (detector limit)
   F_MAX=0.018     # IMRPhenomD inspiral cutoff
+  F_NUM=640       # Number of frequency points
+
+  TIDAL_TERMS="--include-tidal"
+  #TIDAL_TERMS="--include-tidal-full"
+
 else
   echo "Invalid systype: please select one of (BH, NS, NSBH, CBC)"
   exit 1
@@ -184,7 +198,7 @@ dataset_folder="dataset_${systype}"
 python npe/generate_dataset.py \
   --b-ppe -1 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -206,7 +220,7 @@ python npe/generate_dataset.py \
 python npe/generate_dataset.py \
   --b-ppe -2 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -228,7 +242,7 @@ python npe/generate_dataset.py \
 python npe/generate_dataset.py \
   --b-ppe -3 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -250,7 +264,7 @@ python npe/generate_dataset.py \
 python npe/generate_dataset.py \
   --b-ppe -4 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -272,7 +286,7 @@ python npe/generate_dataset.py \
 python npe/generate_dataset.py \
   --b-ppe -5 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -295,7 +309,7 @@ python npe/generate_dataset.py \
 python npe/generate_dataset.py \
   --b-ppe -6 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -317,7 +331,7 @@ python npe/generate_dataset.py \
 python npe/generate_dataset.py \
   --b-ppe -7 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -339,7 +353,7 @@ python npe/generate_dataset.py \
 python npe/generate_dataset.py \
   --b-ppe -8 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -361,7 +375,7 @@ python npe/generate_dataset.py \
 python npe/generate_dataset.py \
   --b-ppe -9 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -383,7 +397,7 @@ python npe/generate_dataset.py \
 python npe/generate_dataset.py \
   --b-ppe -10 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -405,7 +419,7 @@ python npe/generate_dataset.py \
 python npe/generate_dataset.py \
   --b-ppe -11 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -427,7 +441,7 @@ python npe/generate_dataset.py \
 python npe/generate_dataset.py \
   --b-ppe -12 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -449,7 +463,7 @@ python npe/generate_dataset.py \
 python npe/generate_dataset.py \
   --b-ppe -13 \
   --n-ppe 1 \
-  --minus-gr \
+  --minus-gr $TIDAL_TERMS \
   --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
   --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
   --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
@@ -467,3 +481,135 @@ python npe/generate_dataset.py \
   --seed $seed \
   --pool 2 \
   --output-file $dataset_folder/ppe-minus13.pkl
+
+python npe/generate_dataset.py \
+  --b-ppe 0 \
+  --n-ppe 1 \
+  --minus-gr $TIDAL_TERMS \
+  --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
+  --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
+  --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
+  --chi2z-min $CHI_MIN_2 --chi2z-max $CHI_MAX_2 \
+  --l1-min $L_MIN_1 --l1-max $L_MAX_1 \
+  --l2-min $L_MIN_2 --l2-max $L_MAX_2 \
+  --cq1-min $CQ_MIN_1 --cq1-max $CQ_MAX_1 \
+  --cq2-min $CQ_MIN_2 --cq2-max $CQ_MAX_2 \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs $F_NUM \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --ppe-ref-min 10 \
+  --num-samples $nsample \
+  --seed $seed \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-minus0.pkl
+
+python npe/generate_dataset.py \
+  --b-ppe 1 \
+  --n-ppe 1 \
+  --minus-gr $TIDAL_TERMS \
+  --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
+  --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
+  --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
+  --chi2z-min $CHI_MIN_2 --chi2z-max $CHI_MAX_2 \
+  --l1-min $L_MIN_1 --l1-max $L_MAX_1 \
+  --l2-min $L_MIN_2 --l2-max $L_MAX_2 \
+  --cq1-min $CQ_MIN_1 --cq1-max $CQ_MAX_1 \
+  --cq2-min $CQ_MIN_2 --cq2-max $CQ_MAX_2 \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs $F_NUM \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --ppe-ref-min 10 \
+  --num-samples $nsample \
+  --seed $seed \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-plus1.pkl
+
+python npe/generate_dataset.py \
+  --b-ppe 2 \
+  --n-ppe 1 \
+  --minus-gr $TIDAL_TERMS \
+  --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
+  --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
+  --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
+  --chi2z-min $CHI_MIN_2 --chi2z-max $CHI_MAX_2 \
+  --l1-min $L_MIN_1 --l1-max $L_MAX_1 \
+  --l2-min $L_MIN_2 --l2-max $L_MAX_2 \
+  --cq1-min $CQ_MIN_1 --cq1-max $CQ_MAX_1 \
+  --cq2-min $CQ_MIN_2 --cq2-max $CQ_MAX_2 \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs $F_NUM \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --ppe-ref-min 10 \
+  --num-samples $nsample \
+  --seed $seed \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-plus2.pkl
+
+python npe/generate_dataset.py \
+  --b-ppe 3 \
+  --n-ppe 1 \
+  --minus-gr $TIDAL_TERMS \
+  --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
+  --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
+  --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
+  --chi2z-min $CHI_MIN_2 --chi2z-max $CHI_MAX_2 \
+  --l1-min $L_MIN_1 --l1-max $L_MAX_1 \
+  --l2-min $L_MIN_2 --l2-max $L_MAX_2 \
+  --cq1-min $CQ_MIN_1 --cq1-max $CQ_MAX_1 \
+  --cq2-min $CQ_MIN_2 --cq2-max $CQ_MAX_2 \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs $F_NUM \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --ppe-ref-min 10 \
+  --num-samples $nsample \
+  --seed $seed \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-plus3.pkl
+
+python npe/generate_dataset.py \
+  --b-ppe 4 \
+  --n-ppe 1 \
+  --minus-gr $TIDAL_TERMS \
+  --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
+  --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
+  --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
+  --chi2z-min $CHI_MIN_2 --chi2z-max $CHI_MAX_2 \
+  --l1-min $L_MIN_1 --l1-max $L_MAX_1 \
+  --l2-min $L_MIN_2 --l2-max $L_MAX_2 \
+  --cq1-min $CQ_MIN_1 --cq1-max $CQ_MAX_1 \
+  --cq2-min $CQ_MIN_2 --cq2-max $CQ_MAX_2 \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs $F_NUM \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --ppe-ref-min 10 \
+  --num-samples $nsample \
+  --seed $seed \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-plus4.pkl
+
+python npe/generate_dataset.py \
+  --b-ppe 5 \
+  --n-ppe 1 \
+  --minus-gr $TIDAL_TERMS \
+  --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
+  --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
+  --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
+  --chi2z-min $CHI_MIN_2 --chi2z-max $CHI_MAX_2 \
+  --l1-min $L_MIN_1 --l1-max $L_MAX_1 \
+  --l2-min $L_MIN_2 --l2-max $L_MAX_2 \
+  --cq1-min $CQ_MIN_1 --cq1-max $CQ_MAX_1 \
+  --cq2-min $CQ_MIN_2 --cq2-max $CQ_MAX_2 \
+  --fmin $F_MIN --fmax $F_MAX \
+  --num-freqs $F_NUM \
+  --logspace-freqs \
+  --freq-in-geometric-units \
+  --ppe-ref-min 10 \
+  --num-samples $nsample \
+  --seed $seed \
+  --pool 2 \
+  --output-file $dataset_folder/ppe-plus5.pkl

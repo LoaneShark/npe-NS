@@ -18,16 +18,22 @@ class PhasingDataset(torchDataset):
     _freq_key = 'freqs'
     _value_keys = ['phases']
     _label_keys = ['m1', 'm2', 's1z', 's2z']
+    _label_keys_tidal = ['m1', 'm2', 's1z', 's2z', 'l1', 'l2']
+    _label_keys_tidal_full = ['m1', 'm2', 's1z', 's2z', 'l1', 'l2', 'cq1', 'cq2']
     _theory_keys = ['b_ppe', 'gamma_bar']
     _theory_spec = 'dpsi_bar'
 
-    def __init__(self, waveform_dataset, n_ppe=None, norm_fac={}):
+    def __init__(self, waveform_dataset, n_ppe=None, use_tidal=False, use_tidal_full=False, norm_fac={}):
         self._len = len(waveform_dataset)
         theory_keys = self._theory_keys
         if n_ppe is not None:
             spec = [self._theory_spec+f'_{i}' for i in range(2,n_ppe)]
             theory_keys = self._theory_keys + spec
         self._theory = self.transform_theory(waveform_dataset[theory_keys].values)
+        if use_tidal:
+            self._label_keys = self._label_keys_tidal
+        if use_tidal_full:
+            self._label_keys = self._label_keys_tidal_full
         self._labels = self.transform_labels(waveform_dataset[self._label_keys].values)
         if n_ppe is not None:
             freqs = self.transform_values(waveform_dataset[self._freq_key].values)
@@ -50,8 +56,17 @@ class PhasingDataset(torchDataset):
 
     @staticmethod
     def transform_labels(labels):
-        m1, m2, s1z, s2z = np.asarray(labels).T
+        n_params = labels.shape[1]
+        if n_params == 8:
+            m1, m2, s1z, s2z, l1, l2, cq1, cq2 = np.asarray(labels).T
+        elif n_params == 6:
+            m1, m2, s1z, s2z, l1, l2 = np.asarray(labels).T
+        elif n_params == 4:
+            m1, m2, s1z, s2z = np.asarray(labels).T
+        else:
+            raise ValueError("Expecting 4, 6 or 8 parameters, but got: {}".format(n_params))
         mask = m1 < m2
+        # Enforce m1 >= m2
         m1[mask], m2[mask] = m2[mask], m1[mask]
         s1z[mask], s2z[mask] = s2z[mask], s1z[mask]
         mc = component_masses_to_chirp_mass(m1, m2)
@@ -60,8 +75,14 @@ class PhasingDataset(torchDataset):
         q = m2 / m1
         chis = 0.5 * (s1z + s2z)
         chia = 0.5 * (s1z - s2z)
-        # return np.asarray([np.log(mc), np.log(0.25/eta-1), chis, chia]).T
-        return np.asarray([np.log(mc), q, chis, chia]).T
+        if n_params >= 6:
+            ls = 0.5 * (l1 + l2)
+            la = 0.5 * (l1 - l2)
+            # return np.asarray([np.log(mc), np.log(0.25/eta-1), chis, chia]).T
+            return np.asarray([np.log(mc), q, chis, chia, ls, la]).T
+        else:
+            # return np.asarray([np.log(mc), np.log(0.25/eta-1), chis, chia]).T
+            return np.asarray([np.log(mc), q, chis, chia]).T
 
     @staticmethod
     def transform_values(values):
@@ -80,7 +101,7 @@ class PhasingDataset(torchDataset):
     def calculate_phases(freqs, b, gamma_bar, dpsi_bars):
         v = (np.pi * freqs) ** (1/3)
         phases = gamma_bar[:,None] * v ** b[:,None]
-        for i,dpb in enumerate(dpsi_bars.T):
+        for i, dpb in enumerate(dpsi_bars.T):
             phases += gamma_bar[:,None] * dpb[:,None] * v ** (b[:,None] + i + 2)
         return phases
 

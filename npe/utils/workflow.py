@@ -77,6 +77,9 @@ def train(args):
     training_device = args.training_device
     training_seed = args.training_seed
 
+    include_tidal = args.include_tidal
+    include_tidal_full = args.include_tidal_full
+
     npoints_for_latent_plot = args.npoints_for_latent_plot
     npoints_for_generation = args.npoints_for_generation
     show_plot = args.show_plot
@@ -130,7 +133,7 @@ def train(args):
                     dataset_filenames, root_dir=dataset_rootdir, 
                     prep_fns=dataset_prep_fns,
                     sample_size=dataset_sample_size, subset_split=dataset_subset_split, random_state=dataset_seed, 
-                    dataset_type=dataset_type, dataset_kwargs=dict(n_ppe=dataset_n_ppe, norm_fac=dataset_norm_fac))
+                    dataset_type=dataset_type, dataset_kwargs=dict(n_ppe=dataset_n_ppe, norm_fac=dataset_norm_fac, use_tidal=include_tidal))
         if dataset_recipe_save_file is not None:
             save_recipe = True
     log_str = "{} Loaded dataset, with".format(datetime.now().strftime('%H:%M:%S'))

@@ -385,11 +385,15 @@ def get_ASD(freqs, asd_path, head=7, run_type='BH', use_virgo=False):
     if run_type == 'BH':
         asd_df = data[['Frequency', 'Design']].copy()
         #asd_df['Design'] = asd_df['Design']**2  # Convert ASD to PSD
+    
+        asd_interp = interp1d(asd_df['Frequency'], asd_df['Design'], 
+                              bounds_error=False, fill_value=np.inf)
+    
     else:
         asd_df = data[['Frequency', 'BNS Optimised']].copy()
         #asd_df['BNS Optimised'] = asd_df['BNS Optimised']**2  # Convert ASD to PSD
-    
-    asd_interp = interp1d(asd_df['Frequency'], asd_df['Design'], 
-                          bounds_error=False, fill_value=np.inf)
+
+        asd_interp = interp1d(asd_df['Frequency'], asd_df['BNS Optimised'], 
+                              bounds_error=False, fill_value=np.inf)
 
     return asd_interp[freqs]

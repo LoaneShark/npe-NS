@@ -10,7 +10,6 @@ from astropy import units as u
 from astropy import constants as c
 import lal, lalsimulation
 
-
 def get_cli():
     parser = argparse.ArgumentParser(
         "Create a pickle file with GR/non-GR IMRPhenomD waveform phasing")
@@ -80,9 +79,9 @@ def get_cli():
                         help="Frequency is in natural units.")
     parser.add_argument("--minus-gr", action='store_true', default=False,
                         help="Output only correction to GR.")
-    parser.add_argument("--include-tidal", action='store_true', default=False,
+    parser.add_argument("--include-tidal", action=argparse.BooleanOptionalAction, default=False, required=False,
                         help="Include tidal deformation terms in the dataset.")
-    parser.add_argument("--include-tidal-full", action='store_true', default=False,
+    parser.add_argument("--include-tidal-full", action=argparse.BooleanOptionalAction, default=False, required=False,
                         help="Include tidal and spin induced deformation terms in the dataset.")
 
     # sampling specs
@@ -150,18 +149,33 @@ def _get_pn_coeffs(m1, m2, chi1z, chi2z, l1=None, l2=None, cq1=None, cq2=None):
     coeffs_v, coeffs_vlogv, coeffs_vlogvsq = coeffs.reshape(3,-1,num_samples)
     return coeffs_v.T, coeffs_vlogv.T, coeffs_vlogvsq.T
 
-# TODO: does this need to be modified further in the BNS case?
+# WIP/TODO: does this need to be modified further in the BNS case?
 def _get_coeff_bound(b, coeffs_v, v_min, v_max):
     bound = np.zeros_like(b, dtype=float)
-    mask_fbd = (b == 0) | (b >= 3)
-    mask_pos = (b >= -3) & (~mask_fbd)
-    mask_neg = (b <= -5) & (~mask_fbd)
-    mask_miss = ~(mask_fbd|mask_pos|mask_neg)
+    mask_fbd = (b >= 6)                                             # mask forbidden values (>5PN)
+    mask_pos = (b >= -3) & ~(b == 3) & ~(b == 4) & (~mask_fbd)      # mask positive PN powers (except -4, 3, 4)
+    mask_neg = (b <= -5) & (~mask_fbd)                              # mask negative PN powers
+    mask_miss = ~(mask_fbd|mask_pos|mask_neg)                       # mask missing values (-4, 3, 4)
+    # For positive values of b, the bound is given by the PN phasing coeff at that PN order
+    # bound[pos] -> coeffs_v[:,b+5]
     bound[mask_pos] = np.abs(coeffs_v[mask_pos,b[mask_pos]+5])
+    # For negative values of b, the bound is given by the 0PN phasing coeff scaled by v_min at that PN order
+    # bound[neg] -> coeffs_v[:,0] * v_min[b]^(-5-b)
     bound[mask_neg] = np.abs(coeffs_v[mask_neg,0]) * v_min[mask_neg] ** (-5-b[mask_neg])
-    bound_miss_pos = np.abs(coeffs_v[mask_miss,2]) * v_min[mask_miss]
-    bound_miss_neg = np.abs(coeffs_v[mask_miss,0]) / v_max[mask_miss]
+    # For generic missing values, including b = -4, take the minimum of the two bounds
+    # pos bound = 1PN bound * v_min[b]
+    # neg bound = 0PN bound / v_max[b]
+    bound_miss_pos = np.abs(coeffs_v[mask_miss, 2]) * v_min[mask_miss]
+    bound_miss_neg = np.abs(coeffs_v[mask_miss, 0]) / v_max[mask_miss]
     bound[mask_miss] = np.min([bound_miss_pos, bound_miss_neg], axis=0)
+    # For specific values of b = 3, 4, take the minimum of the two nearest bounds for both
+    # pos bound = 5PN bound * v_min[b]
+    # neg bound = 3.5PN bound / v_max[b]
+    mask_3or4 = (b == 3) | (b == 4)
+    bound_3or4_pos = np.abs(coeffs_v[mask_3or4, 10]) * v_min[mask_3or4]
+    bound_3or4_neg = np.abs(coeffs_v[mask_3or4, 7]) / v_max[mask_3or4]
+    bound[mask_3or4] = np.min([bound_3or4_pos, bound_3or4_neg], axis=0)
+
     return bound
 
 
@@ -208,22 +222,34 @@ def _generate_meta_data_chunks(
         )
 
     b = np.repeat(b_ppe, num_samples)
+    print('----------------------------------')
+    print('b_ppe: ', b_ppe)
     ref_min = np.repeat(ppe_ref_min, num_samples)
     ref_max = np.repeat(ppe_ref_max, num_samples)
     if not ppe_ref_min_in_geometric_units:
         ref_min = _convert_f_to_fgeom(ref_min, m1 + m2)
     if not ppe_ref_max_in_geometric_units:
         ref_max = _convert_f_to_fgeom(ref_max, m1 + m2)
+
+    #print('ref_min: ', ref_min)
+    #print('ref_max: ', ref_max)
+
     v_min = (np.pi * ref_min) ** (1/3)
     v_max = (np.pi * ref_max) ** (1/3)
+
+    print('v_min: ', v_min)
+    print('v_max: ', v_max)
 
     if num_params > 4:
         pn_coeffs_v, _, _ = _get_pn_coeffs(m1, m2, chi1z, chi2z, l1, l2, cq1, cq2)
     else:
         pn_coeffs_v, _, _ = _get_pn_coeffs(m1, m2, chi1z, chi2z)
 
-    #print('pn_coeffs_v: ', pn_coeffs_v.shape)
+    print('pn_coeffs_v: ', pn_coeffs_v.shape)
+    if b_ppe >= -5:
+        print('pn_coeffs_v[b]: ', pn_coeffs_v[:,b_ppe+5])
     #print(pn_coeffs_v)
+
     gamma_bar_bound = _get_gamma_bar_bound(b, pn_coeffs_v, v_min, v_max)
     dpsi_bar_bounds = [_get_dpsi_bar_bound(b+i, pn_coeffs_v, v_min, v_max, gamma_bar_bound) \
                         for i in range(2, n_ppe)]
@@ -232,6 +258,14 @@ def _generate_meta_data_chunks(
 
     gamma_bar = gamma_bar_bound * (-1. + 2. * np.random.randint(0, 2, num_samples))
     dpsi_bars = np.random.uniform(-dpsi_bar_bounds, dpsi_bar_bounds)
+    #print('dpsi_bars: ', dpsi_bars.shape)
+    #print('dpsi_bars[0]: ', dpsi_bars[0])
+    #print('dpsi_bar_bounds: ', dpsi_bar_bounds.shape)
+    #print('dpsi_bar_bounds[0]: ', dpsi_bar_bounds[0])
+    print('gamma_bar: ', gamma_bar.shape)
+    print('gamma_bar[0]: ', gamma_bar[0])
+    print('gamma_bar_bound: ', gamma_bar_bound.shape)
+    print('gamma_bar_bound[0]: ', gamma_bar_bound[0])
     ppe_coeffs = np.concatenate([gamma_bar[:, None], dpsi_bars], axis=-1)
 
     if num_params > 6:
@@ -241,8 +275,8 @@ def _generate_meta_data_chunks(
     else:
         labels = np.vstack([m1, m2, chi1z, chi2z, b]).T
 
-    print('labels: ', labels.shape)
-    print('labels: ', labels[0])
+    #print('labels: ', labels.shape)
+    #print('labels[0]: ', labels[0])
     labels = np.concatenate([labels, ppe_bounds, ppe_coeffs], axis=-1)
     return np.array_split(labels, num_chunks)
 
@@ -270,7 +304,7 @@ def _populate_chunk(metadata_array,
     freq_in_natural_units : bool
         frequency is in geometric/SI units i.e. Hz
     n_params : int
-        number of intrinsic binary parameters. 4 for BBH, 8 for BNS.
+        number of intrinsic binary parameters. 4 for BBH, 8 for BNS (NOT FULLY IMPLEMENTED).
     """
     # FIXME
     assert minus_gr
@@ -280,6 +314,8 @@ def _populate_chunk(metadata_array,
     elif n_params == 6:
         col_list = ['m1', 'm2', 's1z', 's2z', 'l1', 'l2', 'b_ppe']
     else:
+        if n_params != 4:
+            print(f'Warning: unexpected n_params value: {n_params}. Defaulting to 4.')
         col_list = ['m1', 'm2', 's1z', 's2z', 'b_ppe']
 
     #print('n_params: ', n_params)
@@ -307,10 +343,15 @@ def _populate_chunk(metadata_array,
     b = metadata_array[:,[n_params]]
     k = b + np.arange(n_ppe)[None,:]
     gamma_bar = metadata_array[:,[n_params+n_ppe]]
+    #print('gamma_bar: ', gamma_bar.shape)
     dpsi_bars = metadata_array[:,n_params+1+n_ppe:]
+    #print('dpsi_bars: ', dpsi_bars.shape)
     delta_bars = np.concatenate([gamma_bar,
                                  np.zeros_like(gamma_bar),
                                  gamma_bar * dpsi_bars], axis=-1)
+    
+    #print('delta_bars: ', delta_bars.shape)
+    #print('delta_bars[0]: ', delta_bars[0])
 
     if not log_spacing:
         freqs = np.linspace(fmin, fmax, num_freqs)
@@ -320,10 +361,15 @@ def _populate_chunk(metadata_array,
     if not freq_in_natural_units:
         freqs = _convert_f_to_fgeom(freqs, mtot)
     v = (np.pi * freqs) ** (1/3)
+    # phi = (beta_b * u_b**b)  +  (beta_(b+1) * u_(b+1)**(b+1)) +  (beta_(b+2) * u_(b+2)**(b+2)) + ...
     phases = delta_bars[:,None,:] * v[:,:,None] ** k[:,None,:]
     phases = np.sum(phases, axis=-1)
     r['freqs'] = list(freqs)
     r['phases'] = list(phases)
+    #print('freqs: ', freqs.shape)
+    #print('freqs: ', freqs[:10], '...', freqs[-10:])
+    #print('phases: ', phases.shape)
+    #print('phases: ', phases[:10], '...', phases[-10:])
     return r
 
 
@@ -337,6 +383,8 @@ def main():
     if args.ppe_ref_max <= 0:
         args.ppe_ref_max = args.fmax
         args.ppe_ref_max_in_geometric_units = args.freq_in_geometric_units
+        
+    #print('-----------------------------------')
     chunks = _generate_meta_data_chunks(
         args.m1_min, args.m2_min,
         args.m1_max, args.m2_max,
