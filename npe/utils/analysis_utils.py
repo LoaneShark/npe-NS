@@ -37,14 +37,24 @@ if os.path.abspath('..') not in sys.path:
     sys.path.append(os.path.abspath('..'))
 
 # Import PyTorch network
-def import_network(network_path, base_path=project_base_path, network_type='BBH'):
+def import_network(network_path, base_path=project_base_path, network_type='BBH', data_dim=None, cond_dim=None):
 
     network_fullpath = os.path.expanduser(os.path.join(base_path, network_path))
 
     device = torch.device('cpu')
-    model_kwargs = dict(depth=4, width=512, data_dim=640, grid_dim=2, freeze_shape=True)
     optimizer_kwargs = dict(lr=1e-4, weight_decay=1e-4)
     scheduler_kwargs = dict(gamma=0.9)
+
+    if network_type in ['BNS']:
+        model_kwargs = dict(depth=4, width=512, 
+                            data_dim=640 if data_dim is None else data_dim,
+                            cond_dim=6 if cond_dim is None else cond_dim,
+                            grid_dim=2, freeze_shape=True)
+    else:
+        model_kwargs = dict(depth=4, width=512, 
+                            data_dim=640 if data_dim is None else data_dim,
+                            cond_dim=4 if cond_dim is None else cond_dim,
+                            grid_dim=2, freeze_shape=True)
     
     model_type = VAE
     optimizer_type = torch.optim.AdamW
@@ -57,6 +67,9 @@ def import_network(network_path, base_path=project_base_path, network_type='BBH'
                                     scheduler_kwargs=scheduler_kwargs, device=device)
     
     state_dict = torch.load(network_fullpath, map_location=device, weights_only=True)
+
+    #print('Model dimensions: \n  |  data_dim: {}\n  |  grid_dim: {}'.format(model.data_dim, model.grid_dim))
+    #print(state_dict['model'].keys())
 
     model = model_type(**model_kwargs).to(device)
     optimizer = optimizer_type(model.parameters(), **optimizer_kwargs)
@@ -85,6 +98,7 @@ def get_phi_ppe(frequency_array, mass_1, mass_2, chi_1, chi_2, b, beta):
     mtot = mass_1 + mass_2
     mc = component_masses_to_chirp_mass(mass_1, mass_2)
     freqs = np.asarray(frequency_array, dtype=np.float64)
+    #freqs = np.asarray(frequency_array, dtype=np.float32)
     fcut = 1.8e-2 / mtot / MSUN_S
     freqs_geom = np.pi * freqs * mc * MSUN_S
     fcut_geom = np.pi * fcut * mc * MSUN_S
@@ -123,18 +137,28 @@ def get_ppe_bound(b_ppe, m1, m2, chi1z, chi2z, l1=0., l2=0., cq1=0., cq2=0., ppe
 
     pn_coeff = lalsimulation.SimInspiralTaylorF2AlignedPhasingArray(*param_vecs).data
     pn_coeff = pn_coeff[:len(pn_coeff)//3] # remove coeffs for vlogv and vlogvsq
-    if b_ref != -4:
+    if b_ref not in [-4, 3, 4] and b_ref < 6:
         pn_coeff = pn_coeff.reshape(-1, num_samples)[b_ref+5] # take only the pn coeff of the ppE order
         beta_ppe_bound = np.abs(pn_coeff) * ppe_ref_v**(b_ref-b_ppe)
     else:
-        pn_coeff1 = pn_coeff.reshape(-1, num_samples)[0]
-        pn_coeff2 = pn_coeff.reshape(-1, num_samples)[2]
-        beta_ppe_bound = np.sqrt(np.abs(pn_coeff1) * np.abs(pn_coeff2))
+        if b_ref == -4:
+            pn_coeff1 = pn_coeff.reshape(-1, num_samples)[0] # 0PN coeff
+            pn_coeff2 = pn_coeff.reshape(-1, num_samples)[2] # 1PN coeff
+            beta_ppe_bound = np.sqrt(np.abs(pn_coeff1) * np.abs(pn_coeff2))
+        elif b_ref == 3:
+            pn_coeff1 = pn_coeff.reshape(-1, num_samples)[7] # 3.5PN coeff
+            pn_coeff2 = pn_coeff.reshape(-1, num_samples)[10] # 5PN coeff
+            beta_ppe_bound = np.cbrt(np.abs(pn_coeff1) * np.abs(pn_coeff2))
+        elif b_ref == 4:
+            pn_coeff1 = pn_coeff.reshape(-1, num_samples)[7] # 3.5PN coeff
+            pn_coeff2 = pn_coeff.reshape(-1, num_samples)[10] # 5PN coeff
+            beta_ppe_bound = np.cbrt(np.abs(pn_coeff1) * np.abs(pn_coeff2))**2.
+
     beta_ppe_bound /= eta**(b_ppe/5.)
     return beta_ppe_bound[0]
 
-def get_ppe_bound_fn_safe(m1, m2, chi1z, chi2z, l1=0., l2=0., cq1=0., cq2=0., ppe_ref=10):
-    b_ppe_interp_valid = np.array([b_i for b_i in np.linspace(-13., -1., 13)])
+def get_ppe_bound_fn_safe(m1, m2, chi1z, chi2z, l1=0., l2=0., cq1=0., cq2=0., ppe_ref=10, b_min=-13, b_max=-1):
+    b_ppe_interp_valid = np.array([b_i for b_i in np.linspace(b_min, b_max, int(b_max - b_min + 1))])
     beta_max_interp_valid = np.array([get_ppe_bound(b_ppe_val, m1, m2, chi1z, chi2z, l1, l2, cq1, cq2, ppe_ref) for b_ppe_val in b_ppe_interp_valid])
     
     beta_interp_fn_log_q = interp1d(b_ppe_interp_valid, np.log10(beta_max_interp_valid), kind='quadratic')
@@ -144,7 +168,8 @@ def get_ppe_bound_fn_safe(m1, m2, chi1z, chi2z, l1=0., l2=0., cq1=0., cq2=0., pp
 
 def get_ppe_bound_safe(b_ppe, func_in, m1=None, m2=None, chi1z=None, chi2z=None, l1=0., l2=0., cq1=0., cq2=0., ppe_ref=10):
     if func_in is None:
-        beta_interp_fn = get_ppe_bound_fn_safe(m1, m2, chi1z, chi2z, l1, l2, cq1, cq2, ppe_ref)
+        b_ppe_max = min(max(-1, int(np.floor(b_ppe))), 5)
+        beta_interp_fn = get_ppe_bound_fn_safe(m1, m2, chi1z, chi2z, l1, l2, cq1, cq2, ppe_ref, b_max=b_ppe_max)
     else:
         beta_interp_fn = func_in
     
@@ -165,7 +190,7 @@ def get_ppe_bound_safe(b_ppe, func_in, m1=None, m2=None, chi1z=None, chi2z=None,
 # Given ppE theory params and intrinsic binary params, calculate VAE latent space representation
 def get_vae_latent_ppe(vae_analyzer: PhaseModificationAnalysis, b, beta, m1, m2, chi1, chi2, l1=0., l2=0., cq1=0., cq2=0.):
     phi_func = lambda freqs: get_phi_ppe(freqs, m1, m2, chi1, chi2, b, beta)
-    z1, z2 = vae_analyzer.extract_latent(phi_func, m1, m2, chi1, chi2)
+    z1, z2 = vae_analyzer.extract_latent(phi_func, m1, m2, chi1, chi2, l1, l2)
     return z1, z2
 
 
@@ -234,22 +259,20 @@ def map_latent_space_scales(vae_analyzer, n_points=100, beta_min=-1., beta_max=1
 
 
 def plot_dephasing(network_path, base_path=project_base_path, root_path='.', network_type='BBH', sample_zmags=False, show_plot=True, title='',
-                   z_ang_min=0., z_ang_max=2*np.pi, verbosity=0,
-                   m1_ref=None, m2_ref=None, chi1_ref=None, chi2_ref=None):
+                   z_ang_min=0., z_ang_max=2*np.pi, verbosity=0, f_num=None, cond_dim=None,
+                   m1_ref=None, m2_ref=None, chi1_ref=None, chi2_ref=None, l1_ref=None, l2_ref=None):
     if network_type not in ['BBH', 'BNS']:
         print('Error: Unsupported network_type. Defaulting to network_type=\'BBH\'')
         network_type = 'BBH'
-    # Import specified network
-    #model, device = import_network(network_path, base_path)
-    model, device, _, _ = import_network(network_path, os.path.join(base_path, root_path))
 
     # Get dephasing values from shape function
-    if network_type == 'BNS':
+    if network_type in ['BNS']:
         f_min = 0.00004
         f_max = 0.018
-        f_num = 640
+        f_num = 640 if f_num is None else f_num
+        cond_dim = 6 if cond_dim is None else cond_dim
 
-        m_min = 0.6
+        m_min = 0.5
         m_max = 3.0
 
         if m1_ref is None:
@@ -260,10 +283,15 @@ def plot_dephasing(network_path, base_path=project_base_path, root_path='.', net
             chi1_ref = 0.001
         if chi2_ref is None:
             chi2_ref = 0.001
-    if network_type == 'NSBH':
+        if l1_ref is None:
+            l1_ref = 300.
+        if l2_ref is None:
+            l2_ref = 300.
+    elif network_type in ['NSBH']:
         f_min = 0.00004
         f_max = 0.018
-        f_num = 640
+        f_num = 640 if f_num is None else f_num
+        cond_dim = 6 if cond_dim is None else cond_dim
 
         m_min = 0.6
         m_max = 6.0
@@ -276,10 +304,15 @@ def plot_dephasing(network_path, base_path=project_base_path, root_path='.', net
             chi1_ref = 0.001
         if chi2_ref is None:
             chi2_ref = 0.001
-    elif network_type == 'BBH':
+        if l1_ref is None:
+            l1_ref = 0.
+        if l2_ref is None:
+            l2_ref = 300.
+    elif network_type in ['BBH']:
         f_min = 0.0004
         f_max = 0.018
-        f_num = 640
+        f_num = 640 if f_num is None else f_num
+        cond_dim = 4 if cond_dim is None else cond_dim
 
         m_min = 5.0
         m_max = 30.0
@@ -291,9 +324,32 @@ def plot_dephasing(network_path, base_path=project_base_path, root_path='.', net
             chi1_ref = 0.1
         if chi2_ref is None:
             chi2_ref = 0.1
+        l1_ref = 0.
+        l2_ref = 0.
     else:
         print(f'Error: Invalid network type: {network_type}')
         return False
+
+    if verbosity >= 0:
+        mtot = m1_ref + m2_ref
+        if network_type in ['BNS', 'NSBH']:
+            tidal_ref_str = f', lambda1={l1_ref:.1f}, lambda2={l2_ref:.1f}'
+        else:
+            tidal_ref_str = ''
+        print(f'Using reference parameters: m1={m1_ref}, m2={m2_ref}, chi1={chi1_ref}, chi2={chi2_ref}{tidal_ref_str}')
+        print(f'Chirp mass: {component_masses_to_chirp_mass(m1_ref, m2_ref):.2f}')
+        #print(f'Frequency range (geometric): {f_min*(2*m_min*MSUN_S)} - {f_max*(2*m_max*MSUN_S)} km^-1')
+        print(f'Frequency range (unitless): {f_min} - {f_max}')
+        print(f'Frequency range (Hz): {f_min / mtot / MSUN_S:.2f} - {f_max / mtot / MSUN_S:.2f} Hz')
+        print(f'Frequency num: {f_num}')
+        #print(f'Latent space angle range: {z_ang_min} - {z_ang_max} rad')
+        #print(f'Latent space angle samples: {360}')
+        print(f'CVAE label dimension: {cond_dim}')
+        
+    # Import specified network
+    #model, device = import_network(network_path, base_path)
+    model, device, _, _ = import_network(network_path, base_path=os.path.join(base_path, root_path), 
+                                         network_type=network_type, data_dim=f_num, cond_dim=cond_dim)
 
     #z_mag = np.linspace(0, 1, 100)
     #z_mag = 0.5
@@ -312,12 +368,14 @@ def plot_dephasing(network_path, base_path=project_base_path, root_path='.', net
         print('z1 shape: ', z1_arr.shape)
         print('z2 shape: ', z2_arr.shape)
 
-    def gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2):
+    def gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2, lambda_1=0., lambda_2=0.):
         mc = bilby.gw.conversion.component_masses_to_chirp_mass(mass_1, mass_2)
         q = mass_2 / mass_1
         chi_sym = 0.5 * (chi_1 + chi_2)
         chi_asym = 0.5 * (chi_1 - chi_2)
-        labels = [np.log(mc), q, chi_sym, chi_asym]
+        lambda_sym = 0.5 * (lambda_1 + lambda_2)
+        lambda_asym = 0.5 * (lambda_1 - lambda_2)
+        labels = [np.log(mc), q, chi_sym, chi_asym, lambda_sym, lambda_asym]
         return labels
 
     # Loop the below over all sampled z_theta values
@@ -344,8 +402,8 @@ def plot_dephasing(network_path, base_path=project_base_path, root_path='.', net
         z = torch.tensor([z1/z_mag, z2/z_mag], device=device).view(1, -1)
         #z = torch.tensor([z1/z_mag, z2/z_mag], dtype=torch.float32, device=device).view(1, -1)
 
-        # returns: [log(Mc), eta, chi_sym, chi_asym]
-        cond = gw_params_to_vae_labels(m1_ref, m2_ref, chi1_ref, chi2_ref)
+        # returns: [log(Mc), eta, chi_sym, chi_asym, lambda_sym, lambda_asym]
+        cond = gw_params_to_vae_labels(m1_ref, m2_ref, chi1_ref, chi2_ref, l1_ref, l2_ref)
         #cond = torch.tensor(cond, dtype=torch.float32, device=device).view(1, -1)
         cond = torch.tensor(cond, device=device).view(1, -1)
         #print('z: ', z.shape, z.dtype)
@@ -409,32 +467,34 @@ def plot_dephasing(network_path, base_path=project_base_path, root_path='.', net
 
 
 # Get and plot maximal value for dS/dtheta
-def get_dSdtheta(network_path, base_path=project_base_path, network_type='BBH', sample_zmags=False, show_plot=True, title=''):
+# TODO: Finish this functionality, and adapt to BNS case
+def get_dSdtheta(network_path, base_path=project_base_path, network_type='BBH', f_num=None, sample_zmags=False, show_plot=True, title=''):
     if network_type not in ['BBH', 'BNS']:
         print('Error: Unsupported network_type. Defaulting to network_type=\'BBH\'')
         network_type = 'BBH'
-    # Import specified network
-    #model, device = import_network(network_path, base_path)
-    model, device, _, _ = import_network(network_path, base_path)
 
-    # Get dephasing values from shape function
     if network_type in ['BNS']:
         f_min = 0.00004
         f_max = 0.018
-        f_num = 640
+        f_num = 640 if f_num is None else f_num
 
-        m_min = 0.6
+        m_min = 0.5
         m_max = 3.0
     elif network_type in ['BBH']:
         f_min = 0.0004
         f_max = 0.018
-        f_num = 640
+        f_num = 640 if f_num is None else f_num
 
         m_min = 5.0
         m_max = 30.0
     else:
         print('Error')
         return False
+    
+    # Import specified network
+    #model, device = import_network(network_path, base_path)
+    model, device, _, _ = import_network(network_path, base_path, network_type, 
+                                         data_dim=f_num)
 
     #z_mag = np.linspace(0, 1, 100)
     #z_mag = 0.5
@@ -498,28 +558,29 @@ from workflow import get_current_epoch_value
 
 
 # Validation dataset
-def get_val_dataloader(base_path=project_base_path, dataset_name=None, network_type='BBH', seed=1234):
-    return get_dataloader(base_path, dataset_name, network_type, subset='val', dataset_seed=seed)
+def get_val_dataloader(base_path=project_base_path, dataset_name=None, network_type='BBH', seed=1234, use_tidal_data=False):
+    return get_dataloader(base_path, dataset_name, network_type, subset='val', dataset_seed=seed, use_tidal_data=use_tidal_data)
 
-def get_val_dataset(base_path=project_base_path, dataset_name=None, network_type='BBH', seed=1234):
-    return get_val_dataloader(base_path, dataset_name, network_type, seed).dataset
+def get_val_dataset(base_path=project_base_path, dataset_name=None, network_type='BBH', seed=1234, use_tidal_data=False):
+    return get_val_dataloader(base_path, dataset_name, network_type, seed, use_tidal_data=use_tidal_data).dataset
 
 # Train dataset
-def get_train_dataloader(base_path=project_base_path, dataset_name=None, network_type='BBH', seed=1234):
-    return get_dataloader(base_path, dataset_name, network_type, subset='train', dataset_seed=seed)
+def get_train_dataloader(base_path=project_base_path, dataset_name=None, network_type='BBH', seed=1234, use_tidal_data=False):
+    return get_dataloader(base_path, dataset_name, network_type, subset='train', dataset_seed=seed, use_tidal_data=use_tidal_data)
 
-def get_train_dataset(base_path=project_base_path, dataset_name=None, network_type='BBH', seed=1234):
-    return get_train_dataloader(base_path, dataset_name, network_type, seed).dataset
+def get_train_dataset(base_path=project_base_path, dataset_name=None, network_type='BBH', seed=1234, use_tidal_data=False):
+    return get_train_dataloader(base_path, dataset_name, network_type, seed, use_tidal_data=use_tidal_data).dataset
 
 # Test dataset
-def get_test_dataloader(base_path=project_base_path, dataset_name=None, network_type='BBH', seed=1234):
-    return get_dataloader(base_path, dataset_name, network_type, subset='test', dataset_seed=seed)
+def get_test_dataloader(base_path=project_base_path, dataset_name=None, network_type='BBH', seed=1234, use_tidal_data=False):
+    return get_dataloader(base_path, dataset_name, network_type, subset='test', dataset_seed=seed, use_tidal_data=use_tidal_data)
 
-def get_test_dataset(base_path=project_base_path, dataset_name=None, network_type='BBH', seed=1234):
-    return get_test_dataloader(base_path, dataset_name, network_type, seed).dataset
+def get_test_dataset(base_path=project_base_path, dataset_name=None, network_type='BBH', seed=1234, use_tidal_data=False):
+    return get_test_dataloader(base_path, dataset_name, network_type, seed, use_tidal_data=use_tidal_data).dataset
 
 # Function to import a dataset from a file
-def get_dataloader(base_path=project_base_path, dataset_name=None, network_type='BBH', dataset_seed=1234, subset=None):
+# TODO: More robust support for different network or dataset structure (partial/full tidal data, etc.)
+def get_dataloader(base_path=project_base_path, dataset_name=None, network_type='BBH', dataset_seed=1234, subset=None, use_tidal_data=False):
     if network_type == 'BNS':
         network_type_short = 'NS'
         dataset_filenames = [
@@ -537,6 +598,15 @@ def get_dataloader(base_path=project_base_path, dataset_name=None, network_type=
             "ppe-minus2.pkl",
             "ppe-minus1.pkl",
         ]
+        if use_tidal_data:
+            dataset_filenames += [
+                "ppe-minus0.pkl",
+                "ppe-plus1.pkl",
+                "ppe-plus2.pkl",
+                "ppe-plus3.pkl",
+                "ppe-plus4.pkl",
+                "ppe-plus5.pkl",
+            ]
     else:
         network_type_short = 'BH'
         dataset_filenames = [
@@ -567,10 +637,12 @@ def get_dataloader(base_path=project_base_path, dataset_name=None, network_type=
     dataset_sample_size = 0.25
     dataset_subset_split = [0.8, 0.1, 0.1]
 
+    # TODO: Make this more robust (use_tidal vs. use_tidal_full, etc.)
     dataset_and_split = DatasetManager(
                 dataset_filenames, root_dir=dataset_rootdir, 
                 sample_size=dataset_sample_size, subset_split=dataset_subset_split, random_state=dataset_seed, 
-                dataset_type=dataset_type, dataset_kwargs=dict(n_ppe=dataset_n_ppe, norm_fac=dataset_norm_fac))
+                dataset_type=dataset_type, dataset_kwargs=dict(n_ppe=dataset_n_ppe, norm_fac=dataset_norm_fac, 
+                                                               use_tidal=use_tidal_data))
         
     batch_size_train = 64
     batch_size_val = 1024
@@ -592,10 +664,12 @@ def get_dataloader(base_path=project_base_path, dataset_name=None, network_type=
         return data_loader_test
 
 def plot_latent_space_distribution(network_path, base_path=project_base_path, root_path='.', network_type='BBH', dataset_seed=1234, dataset_name=None,
-                                   use_final_kwargs=True, z_theta_inj=None, z_theta_rec=None, z_abs_inj=None, z_abs_rec=None):
+                                   use_final_kwargs=True, z_theta_inj=None, z_theta_rec=None, z_abs_inj=None, z_abs_rec=None,
+                                   data_dim=640, cond_dim=4, num_epochs=50, rescaled=False, use_tidal_data=False):
 
     # Import network from file
-    model, device, optimizer, scheduler = import_network(network_path, os.path.abspath(os.path.join(base_path, root_path)))
+    model, device, optimizer, scheduler = import_network(network_path, os.path.abspath(os.path.join(base_path, root_path)), 
+                                                         network_type, data_dim, cond_dim)
 
     # State loss function and diagnosis function of interest
     loss_fn = vae_loss_fn
@@ -622,8 +696,11 @@ def plot_latent_space_distribution(network_path, base_path=project_base_path, ro
 
     # Define total epochs and current epoch (final)
     epochs_per_latent_plot = [(10, 1), (None, 10)]
-    epochs_per_checkpoint = 50
-    final_epoch = 100
+    epochs_per_checkpoint = num_epochs
+    if rescaled:
+        final_epoch = 3 * num_epochs
+    else:
+        final_epoch = 2 * num_epochs
         
     current_epochs_per_latent_plot = get_current_epoch_value(epochs_per_latent_plot, final_epoch)
     current_epochs_per_checkpoint = get_current_epoch_value(epochs_per_checkpoint, final_epoch)
@@ -634,8 +711,8 @@ def plot_latent_space_distribution(network_path, base_path=project_base_path, ro
 
     print('Importing Datasets...')
     # Get training and validation sets used for network training
-    data_loader_train = get_train_dataloader(base_path, dataset_name, network_type, dataset_seed)
-    data_loader_val = get_val_dataloader(base_path, dataset_name, network_type, dataset_seed)
+    data_loader_train = get_train_dataloader(base_path, dataset_name, network_type, dataset_seed, use_tidal_data)
+    data_loader_val = get_val_dataloader(base_path, dataset_name, network_type, dataset_seed, use_tidal_data)
 
     # Print some dataset info
     if True:
@@ -648,6 +725,9 @@ def plot_latent_space_distribution(network_path, base_path=project_base_path, ro
         print(f'    m2: {data_loader_val.dataset[0][1][1]}')
         print(f'    s1: {data_loader_val.dataset[0][1][2]}')
         print(f'    s2: {data_loader_val.dataset[0][1][3]}')
+        if cond_dim >= 6:
+            print(f'    lambda1: {data_loader_val.dataset[0][1][4]}')
+            print(f'    lambda2: {data_loader_val.dataset[0][1][5]}')
 
     #training_seed = None
     #torch.manual_seed(training_seed)
@@ -719,7 +799,7 @@ def plot_latent_space_distribution(network_path, base_path=project_base_path, ro
     if False:
         # WIP: Plot sample values as projected onto latent space
         from waveform_analysis import PhaseModificationAnalysis
-        model_kwargs = dict(depth=4, width=512, data_dim=640, grid_dim=2, freeze_shape=True)
+        model_kwargs = dict(depth=4, width=512, data_dim=640, cond_dim=4, grid_dim=2, freeze_shape=True)
         network_fullpath = os.path.expanduser(os.path.join(base_path, network_path))
         val_dataset_analysis = PhaseModificationAnalysis(network_fullpath, model_kwargs=model_kwargs)
 
@@ -764,17 +844,24 @@ def plot_latent_space_distribution(network_path, base_path=project_base_path, ro
     #plt.show()
 
 
-def compare_reconstructed_phasing(network_path, base_path=project_base_path, root_path='.', b_inj=-5, beta_rel_inj=0.5,
-                                  plot_difference=False, network_type='BBH', injection_parameters=None):
+def compare_reconstructed_phasing(network_path, base_path=project_base_path, root_path='.', b_inj=-5, beta_rel_inj=0.5, f_max=None,
+                                  plot_difference=False, network_type='BBH', injection_parameters=None,
+                                  data_dim=None, cond_dim=None, plot_scale='linear'):
     # Import Network
     network_file = os.path.expanduser(os.path.join(base_path, root_path, network_path))
-    network_kwargs = dict(depth=4, width=512,
-                          data_dim=640, grid_dim=2,
-                          cond_dim=4)
     if network_type in ['BNS', 'NSBH']:
         fmin = 0.00004
+        network_kwargs = dict(depth=4, width=512,
+                              data_dim=640 if data_dim is None else data_dim, 
+                              grid_dim=2,
+                              cond_dim=6 if cond_dim is None else cond_dim)
     else:
         fmin = 0.0004
+        network_kwargs = dict(depth=4, width=512,
+                              data_dim=640 if data_dim is None else data_dim, 
+                              grid_dim=2,
+                              cond_dim=4 if cond_dim is None else cond_dim)
+        
     vae_analyzer = PhaseModificationAnalysis(network_file, network_kwargs, min_fgeom=fmin)
 
     #def get_vae_latent_ppe(b, beta, m1, m2, chi1, chi2, l1=0., l2=0., cq1=0., cq2=0.):
@@ -856,6 +943,7 @@ def compare_reconstructed_phasing(network_path, base_path=project_base_path, roo
     else:
         lt = injection_parameters['lambda_tilde']
     plot_freqs = 10**(vae_analyzer.model_loggeom_freqs) / (np.pi * mc * MSUN_S)
+    plot_freqs_geom = 10**(vae_analyzer.model_loggeom_freqs)
 
     print('Injection Parameters:')
     print('  |  b', b_inj)
@@ -879,20 +967,54 @@ def compare_reconstructed_phasing(network_path, base_path=project_base_path, roo
     recon_phi = vae_analyzer.phase_mod(plot_freqs,
                                        injection_parameters['mass_1'], injection_parameters['mass_2'],
                                        injection_parameters['chi_1'], injection_parameters['chi_2'],
+                                       injection_parameters.get('lambda_1', 0.), injection_parameters.get('lambda_2', 0.),
                                        z1, z2)
     
-    # Plot ppE injected phase mod vs. npE reconstruction
-    plt.plot(plot_freqs, inject_phi, label='Injected')
-    plt.plot(plot_freqs, recon_phi, label='Reconstructed', linestyle=':')
+    # Set up figure with main and secondary axes
     if plot_difference:
-        plt.plot(plot_freqs, inject_phi-recon_phi, label='Difference', linestyle='--')
-    
-    plt.xlabel(r'$f$ [Hz]')
-    plt.ylabel(r'$\Delta \Phi$')
-    plt.title('ppE vs. npE:   ' + (r'{ $b_{ppE}$ = %.2f  |  $\beta_{ppE}$ = %.2e }' % (injection_parameters['b'], injection_parameters['beta'])))
-    plt.legend()
+        fig, (ax_main, ax_secondary) = plt.subplots(2, 1, sharex=True, figsize=(8, 6),
+                                                gridspec_kw={'height_ratios': [3, 1]})
+    else:
+        fig, ax_main = plt.subplots(1, 1, figsize=(8, 4))
+        ax_secondary = None
 
-    plt.tight_layout
+    # Plot ppE injected phase mod vs. npE reconstruction
+    ax_main.plot(plot_freqs, inject_phi, label='Injected')
+    ax_main.plot(plot_freqs, recon_phi, label='Reconstructed', linestyle=':')
+    if plot_difference:
+        phi_rel_diff = np.abs(inject_phi-recon_phi)/np.abs(inject_phi)
+        ax_secondary.plot(plot_freqs, phi_rel_diff, label='_Difference', linestyle='--', color='g')
+        ax_secondary.set_yscale('log' if np.all(phi_rel_diff > 0.) else 'symlog' if np.any(phi_rel_diff > 0.) else 'linear')
+        ax_secondary.set_ylabel('Rel. Difference')
+        ax_secondary.set_xscale(plot_scale)
+        ax_secondary.set_xlabel(r'$f$ [Hz]')
+        ax_secondary.grid()
+    else:
+        ax_main.set_xlabel(r'$f$ [Hz]')
+    
+
+    if f_max is not None:
+        ax_main.set_xlim(fmin, f_max)
+        if plot_difference:
+            ax_secondary.set_xlim(fmin, f_max)
+    
+    ax_main.set_ylabel(r'$\Delta \Phi$')
+    ax_main.grid()
+    ax_main.set_xscale(plot_scale)
+    #ax_main.set_yscale('log')
+    ax_main.set_title('ppE vs. npE:   ' + (r'{ $b_{ppE}$ = %.2f  |  $\beta_{ppE}$ = %.2e }' % (injection_parameters['b'], injection_parameters['beta'])))
+    ax_main.legend()
+
+    def freqs_to_geom(x):
+        return x * (np.pi * mc * MSUN_S)
+    def geom_to_freqs(x):
+        return x / (np.pi * mc * MSUN_S)
+    
+    #ax2 = plt.gca().secondary_xaxis('top', functions=(geom_to_freqs, freqs_to_geom))
+    #ax2.set_xlabel(r'$\bar{f}$')
+
+    #plt.grid()
+    plt.tight_layout()
     plt.show()
 
 
@@ -1253,19 +1375,23 @@ def get_rec_params(result: Result, vae_analyzer: PhaseModificationAnalysis, use_
     
     return b_rec, beta_rec, z_abs_rec, z_theta_rec
 
-def compare_params(result_name, network_name=None, verbosity=1, root_path=project_base_path, network_type='BBH'):
+def compare_params(result_name, network_name=None, verbosity=1, root_path=project_base_path, network_type='BBH', data_dim=None):
     if network_name is None:
         vae_analyzer = None
     else:
         network_file = os.path.abspath(os.path.expanduser(os.path.join(root_path, '.', network_name)))
-        network_kwargs = dict(depth=4, width=512,
-                            data_dim=640, grid_dim=2)
         if verbosity >= 2:
             print('network_file: ', network_file)
-        if network_type == 'BNS':
+        if network_type in ['BNS']:
             fmin = 0.00004
+            network_kwargs = dict(depth=4, width=512, 
+                                  data_dim=640 if data_dim is None else data_dim,
+                                  cond_dim=4, grid_dim=2)
         else:
             fmin = 0.0004
+            network_kwargs = dict(depth=4, width=512, 
+                                  data_dim=640 if data_dim is None else data_dim,
+                                  cond_dim=4, grid_dim=2)
         vae_analyzer = PhaseModificationAnalysis(network_file, network_kwargs, min_fgeom=fmin)
 
     result_file = os.path.abspath(os.path.expanduser(os.path.join(root_path, 'logs', 'pe', result_name, 'npe-pe_result.json')))

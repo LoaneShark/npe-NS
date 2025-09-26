@@ -155,6 +155,7 @@ def _get_coeff_bound(b, coeffs_v, v_min, v_max):
     mask_fbd = (b >= 6)                                             # mask forbidden values (>5PN)
     mask_pos = (b >= -3) & ~(b == 3) & ~(b == 4) & (~mask_fbd)      # mask positive PN powers (except -4, 3, 4)
     mask_neg = (b <= -5) & (~mask_fbd)                              # mask negative PN powers
+    mask_deg = (b == 0) | (b == 3)                                  # mask degenerate PN powers (2.5PN and 4PN)
     mask_miss = ~(mask_fbd|mask_pos|mask_neg)                       # mask missing values (-4, 3, 4)
     # For positive values of b, the bound is given by the PN phasing coeff at that PN order
     # bound[pos] -> coeffs_v[:,b+5]
@@ -175,6 +176,14 @@ def _get_coeff_bound(b, coeffs_v, v_min, v_max):
     bound_3or4_pos = np.abs(coeffs_v[mask_3or4, 10]) * v_min[mask_3or4]
     bound_3or4_neg = np.abs(coeffs_v[mask_3or4, 7]) / v_max[mask_3or4]
     bound[mask_3or4] = np.min([bound_3or4_pos, bound_3or4_neg], axis=0)
+
+    # Suppress degenerate PN orders so that the bounds are well outside of our sampling priors
+    #bound[mask_deg] = bound[mask_deg] * 0.
+    #bound[mask_deg] = bound[mask_deg] * np.inf
+    #bound[mask_deg] = bound[mask_deg] * -1. * np.inf
+    #bound[mask_deg] = bound[mask_deg] * 1e-20
+    #bound[mask_deg] = bound[mask_deg] * 1e-8
+    #bound[mask_deg] = bound[mask_deg] * 1e4
 
     return bound
 
@@ -256,6 +265,7 @@ def _generate_meta_data_chunks(
     dpsi_bar_bounds = np.asarray(dpsi_bar_bounds).reshape(-1,num_samples).T
     ppe_bounds = np.concatenate([gamma_bar_bound[:, None], dpsi_bar_bounds], axis=-1)
 
+    # Randomly populate data with +/- gamma_bar_bound
     gamma_bar = gamma_bar_bound * (-1. + 2. * np.random.randint(0, 2, num_samples))
     dpsi_bars = np.random.uniform(-dpsi_bar_bounds, dpsi_bar_bounds)
     #print('dpsi_bars: ', dpsi_bars.shape)

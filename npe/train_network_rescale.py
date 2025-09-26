@@ -41,6 +41,31 @@ def get_cli():
                         help="Set RNG seed for dataset generation.")
     parser.add_argument("--training-seed", type=int, default=-1,
                         help="Set RNG seed for training.")
+    parser.add_argument("--data-dim", type=int, default=640,
+                        help="Set dimensionality of dephasing frequency grid (Default: 640).")
+    parser.add_argument("--num-epochs", type=int, default=50,
+                        help="Number of epochs to add for rescaled dataset additional training, and assumed to be used in previous training (Default: 50).")
+    parser.add_argument("--include-tidal", action=argparse.BooleanOptionalAction, default=False, required=False,
+                        help="Include tidal deformation terms in the parameter space.")
+    parser.add_argument("--include-tidal-full", action=argparse.BooleanOptionalAction, default=False, required=False,
+                        help="Include tidal and spin induced deformation terms in the parameter space.")
+    parser.add_argument("--include-tidal-data", action=argparse.BooleanOptionalAction, default=False, required=False,
+                        help="Include tidal deformation waveform data, up to 5PN.")
+    parser.add_argument("--include-tidal-data-2p5and4", action=argparse.BooleanOptionalAction, default=None, required=False,
+                        help="Include tidal deformation waveform data which may be degenerate with waveform parameters, specifically at 2.5PN and 4PN")
+    parser.add_argument("--rescale-2p5and4", action=argparse.BooleanOptionalAction, default=None, required=False,
+                        help="Whether or not to suppress latent space support at 2.5PN and 4PN orders.")
+    parser.add_argument("--rescale-2p5and4-only", action=argparse.BooleanOptionalAction, default=None, required=False,
+                        help="Whether or not to only rescale by suppressing latent space support at 2.5PN and 4PN orders.")
+    
+    parser.add_argument("--train-lr", type=float, default=1e-4,
+                        help="Base learning rate to use for training.")
+    parser.add_argument("--train-wd", type=float, default=1e-4,
+                        help="Weight decay to use for training.")
+    parser.add_argument("--train-gamma", type=float, default=0.9,
+                        help="Multiplicative learning rate decay factor (<1).")
+    parser.add_argument("--train-kl-coeff", type=float, default=1e-6,
+                        help="Coefficient to weight KL divergence term in loss function relative to reconstruction error term.")
     args = parser.parse_args()
     return args
 
@@ -135,6 +160,7 @@ class VAE(nn.Module):
             grid_dim = data_dim
         self.data_dim = data_dim
         self.grid_dim = grid_dim
+        self.cond_dim = cond_dim
         self.freeze_shape = freeze_shape
         self.freeze_scale = freeze_scale
         self.raw_encoder = Encoder(width, depth, 
@@ -412,8 +438,8 @@ def main():
 
     # args.run_title = "npE_network"
     args.resume_title = args.run_title
-    args.resume_epochs = 100
-    args.add_epochs = 50
+    args.resume_epochs = args.num_epochs * 2
+    args.add_epochs = args.num_epochs
     args.epochs_per_latent_plot = 10
     args.epochs_per_checkpoint = 10
     args.optimizer_override = True
@@ -425,9 +451,9 @@ def main():
 
     args.show_plot = False
 
-    args.lr = 1e-4
-    args.wd = 1e-4
-    args.gamma = 0.9
+    args.lr = args.train_lr
+    args.wd = args.train_wd
+    args.gamma = args.train_gamma
     args.loss_kwargs = dict(
         kl_coeff=0., 
         shape_coeff=0., scale_coeff=0., 
@@ -440,9 +466,8 @@ def main():
     # i.e. cond_dim ~ # of intrinsic binary parameters, so we may need to expand it for BNS tidal deformability
     args.structure_kwargs = dict(
         depth=4, width=512,
-        data_dim=640, grid_dim=2,
-        cond_dim=4,
-        # cond_dim=8,
+        data_dim=args.data_dim, grid_dim=2,
+        cond_dim=8 if args.include_tidal_full else 6 if args.include_tidal else 4,
         )
 
     args.model_type = VAE
@@ -462,6 +487,11 @@ def main():
     args.npoints_for_generation = 16
     args.show_plot = False
 
+    args.include_tidal_data = bool(args.include_tidal_data) or bool(args.include_tidal_data_full)
+    args.include_tidal_data_2p5and4 = bool(args.include_tidal_data_2p5and4) if args.include_tidal_data_2p5and4 is not None else args.include_tidal_data
+    args.rescale_2p5and4 = (bool(args.rescale_2p5and4) or bool(args.rescale_2p5and4_only)) and args.include_tidal_data_2p5and4
+    args.rescale_2p5and4_only = bool(args.rescale_2p5and4_only)
+
     args.dataset_recipe_from_file = None
     args.dataset_recipe_save_file = None
     if args.run_type in ['NS', 'NSBH']:
@@ -480,6 +510,25 @@ def main():
             'ppe-minus2.pkl',
             'ppe-minus1.pkl'
         ]
+        if args.include_tidal_data:
+            if args.include_tidal_data_2p5and4:
+                args.dataset_filenames += [
+                    'ppe-minus0.pkl',
+                    'ppe-plus1.pkl',
+                    'ppe-plus2.pkl',
+                    'ppe-plus3.pkl',
+                    'ppe-plus4.pkl',
+                    'ppe-plus5.pkl'
+                ]
+            else:
+                args.dataset_filenames += [
+                    #'ppe-minus0.pkl',
+                    'ppe-plus1.pkl',
+                    'ppe-plus2.pkl',
+                    #'ppe-plus3.pkl',
+                    'ppe-plus4.pkl',
+                    'ppe-plus5.pkl'
+                ]
     else:
         args.dataset_filenames = [
             'ppe-minus13.pkl',
@@ -496,11 +545,27 @@ def main():
             'ppe-minus2.pkl',
             'ppe-minus1.pkl'
         ]
+    
+    def prep_fn_suppressed(df):
+        #df['phases'] = df['phases'].apply(lambda x: np.inf)
+        #df['phases'] = df['phases'].apply(lambda x: 0.)
+        df['phases'] = df['phases'].apply(lambda x: x * 1e-4)
+        return df
+    
+    def prep_fn_ignored(df):
+        return df
+    
+    degenerate_filenames = ['ppe-minus0.pkl', 'ppe-plus0.pkl', 'ppe-plus3.pkl'] if args.rescale_2p5and4 else []
+    
     args.dataset_prep_fns = [
-        get_data_rescale_function(filename, args.rescale_rootdir)
+        prep_fn_ignored if args.rescale_2p5and4_only else get_data_rescale_function(filename, args.rescale_rootdir)
+        if filename not in degenerate_filenames
+        else prep_fn_suppressed
         for filename in args.dataset_filenames
     ]
     args.dataset_type = PhasingDataset
+    args.dataset_kwargs = dict(use_tidal=args.include_tidal, 
+                               use_tidal_full=args.include_tidal_full)
     args.dataset_n_ppe = None # just use the dephasing provided by the dataset, no scratch construction from the ppE coefficients
     args.dataset_norm_fac = {}
     args.dataset_sample_size = 0.25

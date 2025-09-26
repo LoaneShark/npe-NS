@@ -16,17 +16,17 @@ N_FREQS=640
 #N_FREQS=1280
 #TIDAL_TERMS="--include-tidal"
 #TIDAL_TERMS="--include-tidal-full"
-TIDAL_TERMS="--include-tidal --include-tidal-data"
-#TIDAL_TERMS="--no-include-tidal"
+#TIDAL_TERMS="--include-tidal --include-tidal-data"
+TIDAL_TERMS="--no-include-tidal"
 
-#DATASET=dataset_${content}
+DATASET=dataset_${content}
 #DATASET=dataset_${content}_3.5PN
-DATASET=dataset_${content}_5PN
+#DATASET=dataset_${content}_5PN
 #DATASET=dataset_${content}_5PN_tidal_full
 
-#TITLE=npe-$content
+TITLE=npe-$content
 #TITLE=npe-$content-3.5PN
-TITLE=npe-$content-5PN
+#TITLE=npe-$content-5PN
 
 python npe/train_network.py \
   --dataset-rootdir $DATASET \

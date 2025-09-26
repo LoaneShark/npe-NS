@@ -25,6 +25,10 @@ def get_cli():
                         help="Whether the noise curve is given in ASD.")
     parser.add_argument("--dataset-path", type=str,
                         help="Path to the original dataset.")
+    parser.add_argument("--use-tidal-data", action="store_true", default=False,
+                        help="Toggle whether or not tidal data labels are expected (cond_dim == 6).")
+    parser.add_argument("--use-tidal-data-full", action="store_true", default=False,
+                        help="Toggle whether or not tidal data labels are expected (cond_dim == 8).")
     parser.add_argument("--min-over-tphi", action="store_true", default=False)
     parser.add_argument("--min-over-m1m2", action="store_true", default=False)
     parser.add_argument("--pool", default=1, type=int, help="Pool size.")
@@ -92,6 +96,7 @@ def get_neff2_logf_min_over_tphim1m2(freqs, phases, m1ref, m2ref, *psd_interp):
     return res.fun
 
 # Parent function to call the appropriate N_eff ^ 2 calculation
+# TODO: We could minimize over lambda1 lambda2 as well
 def get_neff2_logf(freqs, phases, *psd_interp, 
                    min_over_tphi=False, 
                    min_over_m1m2=False, m1ref=None, m2ref=None):

@@ -47,8 +47,23 @@ def get_cli():
                         help="Include tidal and spin induced deformation terms in the parameter space.")
     parser.add_argument("--include-tidal-data", action=argparse.BooleanOptionalAction, default=False, required=False,
                         help="Include tidal deformation waveform data, up to 5PN.")
+    parser.add_argument("--include-tidal-data-2p5and4", action=argparse.BooleanOptionalAction, default=None, required=False,
+                        help="Include tidal deformation waveform data which may be degenerate with waveform parameters, specifically at 2.5PN and 4PN.")
+    parser.add_argument("--rescale-2p5and4", action=argparse.BooleanOptionalAction, default=None, required=False,
+                        help="Whether or not to suppress latent space support at 2.5PN and 4PN orders.")
+    parser.add_argument("--penalize-highPN", action=argparse.BooleanOptionalAction, default=None, required=False,
+                        help="Penalize latent space from learning high-PN-like dephasing functions in the non-PN region.")
     parser.add_argument("--num-epochs", type=int, default=50,
                         help="Number of epochs to use (each) for training the scale and shape functions.")
+    
+    parser.add_argument("--train-lr", type=float, default=1e-4,
+                        help="Base learning rate to use for training.")
+    parser.add_argument("--train-wd", type=float, default=1e-4,
+                        help="Weight decay to use for training.")
+    parser.add_argument("--train-gamma", type=float, default=0.9,
+                        help="Multiplicative learning rate decay factor (<1).")
+    parser.add_argument("--train-kl-coeff", type=float, default=1e-6,
+                        help="Coefficient to weight KL divergence term in loss function relative to reconstruction error term.")
     
     args = parser.parse_args()
     return args
@@ -420,12 +435,13 @@ def main():
     args.batch_size_val = 1024
     args.batches_per_summary = 0.1
 
-    # TODO: Play around with these
-    args.lr = 1e-4
-    args.wd = 1e-4
-    args.gamma = 0.9
+    args.penalize_highPN
+
+    args.lr = args.train_lr                  # learning rate
+    args.wd = args.train_wd                  # weight decay
+    args.gamma = args.train_gamma            # learning rate decay
     args.loss_kwargs = dict(
-        kl_coeff=1e-6, 
+        kl_coeff=args.train_kl_coeff, 
         shape_coeff=1., scale_coeff=0., 
         recon_coeff=0., recon_scale_coeff=0.,
         with_mu=False, recon_use_mse=False, 
@@ -480,7 +496,7 @@ def main():
 
     args.dataset_recipe_from_file = None
     args.dataset_recipe_save_file = None
-    if args.run_type == 'NS':
+    if args.run_type in ['NS', 'NSBH']:
         args.dataset_filenames = [
             'ppe-minus13.pkl',
             'ppe-minus12.pkl',
@@ -497,14 +513,34 @@ def main():
             'ppe-minus1.pkl'
         ]
         if args.include_tidal_data:
-            args.dataset_filenames += [
-                'ppe-minus0.pkl',
-                'ppe-plus1.pkl',
-                'ppe-plus2.pkl',
-                'ppe-plus3.pkl',
-                'ppe-plus4.pkl',
-                'ppe-plus5.pkl'
-            ]
+            if args.include_tidal_data_2p5and4 is None or bool(args.include_tidal_data_2p5and4):
+                args.dataset_filenames += [
+                    'ppe-minus0.pkl',
+                    'ppe-plus1.pkl',
+                    'ppe-plus2.pkl',
+                    'ppe-plus3.pkl',
+                    'ppe-plus4.pkl',
+                    'ppe-plus5.pkl'
+                ]
+                if bool(args.rescale_2p5and4):
+                    def prep_fn_suppressed(df):
+                        #df['phases'] = df['phases'].apply(lambda x: np.inf)
+                        #df['phases'] = df['phases'].apply(lambda x: 0.)
+                        df['phases'] = df['phases'].apply(lambda x: x * 1e-8)
+                        return df
+                    
+                    args.dataset_prep_fns = [lambda x:x] * len(args.dataset_filenames)
+                    args.dataset_prep_fns[args.dataset_filenames.index('ppe-minus0.pkl')] = prep_fn_suppressed
+                    args.dataset_prep_fns[args.dataset_filenames.index('ppe-plus3.pkl')]  = prep_fn_suppressed
+            else:
+                args.dataset_filenames += [
+                    #'ppe-minus0.pkl',
+                    'ppe-plus1.pkl',
+                    'ppe-plus2.pkl',
+                    #'ppe-plus3.pkl',
+                    'ppe-plus4.pkl',
+                    'ppe-plus5.pkl'
+                ]
     else:
         args.dataset_filenames = [
             'ppe-minus13.pkl',
@@ -558,9 +594,9 @@ def main():
 
     args.show_plot = False
 
-    args.lr = 1e-4
-    args.wd = 1e-4
-    args.gamma = 0.9
+    args.lr = args.train_lr
+    args.wd = args.train_wd
+    args.gamma = args.train_gamma
     args.loss_kwargs = dict(
         kl_coeff=0., 
         shape_coeff=0., scale_coeff=0., 
