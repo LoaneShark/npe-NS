@@ -65,6 +65,7 @@ def train(args):
     lr = args.lr
     wd = args.wd
     gamma = args.gamma
+    kl_coeff = args.train_kl_coeff
     loss_kwargs = args.loss_kwargs
     diagnosis_kwargs = args.diagnosis_kwargs
 
@@ -79,6 +80,10 @@ def train(args):
 
     include_tidal = args.include_tidal
     include_tidal_full = args.include_tidal_full
+    include_tidal_data = args.include_tidal_data
+    include_tidal_data_2p5and4 = args.include_tidal_data_2p5and4
+    rescale_2p5and4 = args.rescale_2p5and4
+    penalize_highPN = args.penalize_highPN
 
     npoints_for_latent_plot = args.npoints_for_latent_plot
     npoints_for_generation = args.npoints_for_generation
@@ -105,6 +110,10 @@ def train(args):
 
 
     log_str = "{} Training program started with title '{}'".format(datetime.now().strftime('%H:%M:%S'), run_title)
+    print(log_str); sys.stdout.flush()
+
+    run_config = dict(lr=lr, wd=wd, gamma=gamma, kl_coeff=kl_coeff, epochs=epochs_per_checkpoint, loss_kwargs=loss_kwargs, rescale_2p5and4=rescale_2p5and4, model_type=model_type, optimizer_type=optimizer_type, scheduler_type=scheduler_type)
+    log_str = "{} Running with configuration args: {}".format(datetime.now().strftime('%H:%M:%S'), run_config)
     print(log_str); sys.stdout.flush()
 
 
