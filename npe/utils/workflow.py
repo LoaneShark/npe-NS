@@ -78,8 +78,8 @@ def train(args):
     training_device = args.training_device
     training_seed = args.training_seed
 
-    include_tidal = args.include_tidal
-    include_tidal_full = args.include_tidal_full
+    include_tidal_params = args.include_tidal_params
+    include_tidal_params_full = args.include_tidal_params_full
     include_tidal_data = args.include_tidal_data
     include_tidal_data_2p5and4 = args.include_tidal_data_2p5and4
     rescale_2p5and4 = args.rescale_2p5and4

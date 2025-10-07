@@ -23,16 +23,16 @@ class PhasingDataset(torchDataset):
     _theory_keys = ['b_ppe', 'gamma_bar']
     _theory_spec = 'dpsi_bar'
 
-    def __init__(self, waveform_dataset, n_ppe=None, use_tidal=False, use_tidal_full=False, norm_fac={}):
+    def __init__(self, waveform_dataset, n_ppe=None, use_tidal_params=False, use_tidal_params_full=False, norm_fac={}):
         self._len = len(waveform_dataset)
         theory_keys = self._theory_keys
         if n_ppe is not None:
             spec = [self._theory_spec+f'_{i}' for i in range(2,n_ppe)]
             theory_keys = self._theory_keys + spec
         self._theory = self.transform_theory(waveform_dataset[theory_keys].values)
-        if use_tidal:
+        if use_tidal_params:
             self._label_keys = self._label_keys_tidal
-        if use_tidal_full:
+        if use_tidal_params_full:
             self._label_keys = self._label_keys_tidal_full
         self._labels = self.transform_labels(waveform_dataset[self._label_keys].values)
         if n_ppe is not None:
