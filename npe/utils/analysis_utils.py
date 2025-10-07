@@ -580,9 +580,9 @@ def get_test_dataset(base_path=project_base_path, dataset_name=None, network_typ
 
 # Function to import a dataset from a file
 # TODO: More robust support for different network or dataset structure (partial/full tidal data, etc.)
-def get_dataloader(base_path=project_base_path, dataset_name=None, network_type='BBH', dataset_seed=1234, subset=None, use_tidal_data=False):
-    if network_type == 'BNS':
-        network_type_short = 'NS'
+def get_dataloader(base_path=project_base_path, dataset_name=None, network_type='BBH', dataset_seed=1234, subset=None, use_tidal_data=False, use_tidal_data_full=False):
+    if network_type in ['BNS', 'NSBH']:
+        network_type_short = 'NS' if network_type == 'BNS' else 'NSBH'
         dataset_filenames = [
             "ppe-minus13.pkl",
             "ppe-minus12.pkl",
@@ -598,7 +598,7 @@ def get_dataloader(base_path=project_base_path, dataset_name=None, network_type=
             "ppe-minus2.pkl",
             "ppe-minus1.pkl",
         ]
-        if use_tidal_data:
+        if use_tidal_data or use_tidal_data_full:
             dataset_filenames += [
                 "ppe-minus0.pkl",
                 "ppe-plus1.pkl",
@@ -642,7 +642,7 @@ def get_dataloader(base_path=project_base_path, dataset_name=None, network_type=
                 dataset_filenames, root_dir=dataset_rootdir, 
                 sample_size=dataset_sample_size, subset_split=dataset_subset_split, random_state=dataset_seed, 
                 dataset_type=dataset_type, dataset_kwargs=dict(n_ppe=dataset_n_ppe, norm_fac=dataset_norm_fac, 
-                                                               use_tidal=use_tidal_data))
+                                                               use_tidal=use_tidal_data, use_tidal_full=use_tidal_data_full))
         
     batch_size_train = 64
     batch_size_val = 1024
@@ -665,7 +665,8 @@ def get_dataloader(base_path=project_base_path, dataset_name=None, network_type=
 
 def plot_latent_space_distribution(network_path, base_path=project_base_path, root_path='.', network_type='BBH', dataset_seed=1234, dataset_name=None,
                                    use_final_kwargs=True, z_theta_inj=None, z_theta_rec=None, z_abs_inj=None, z_abs_rec=None,
-                                   data_dim=640, cond_dim=4, num_epochs=50, rescaled=False, use_tidal_data=False):
+                                   data_dim=640, cond_dim=4, num_epochs=50, rescaled=False, use_tidal_data=False,
+                                   b_ppe_min=None, b_ppe_max=None):
 
     # Import network from file
     model, device, optimizer, scheduler = import_network(network_path, os.path.abspath(os.path.join(base_path, root_path)), 
@@ -758,9 +759,9 @@ def plot_latent_space_distribution(network_path, base_path=project_base_path, ro
     #log_str += "\nHparams = {}".format(hparams)
     #print(log_str); sys.stdout.flush()
 
-    print('Training agent...')
     # Agent train step
-    if True:
+    if False:
+        print('Training agent...')
         agent.train()
         for i_batch, data_batch in enumerate(data_loader_train):
             optimizer.zero_grad()
@@ -787,14 +788,55 @@ def plot_latent_space_distribution(network_path, base_path=project_base_path, ro
 
     print('Plotting Latent Space distribution...')
     # Plot latent space distribution
-
     if False:
         #print('Agent plot')
         fig_latent = agent.report_latent_distrib()
     else:
         #print('Manual plot')
         distrib = {k: np.concatenate(agent._acc_distrib[k], axis=0) for k in agent._distrib_keys}
-        fig_latent = plot_latent_distrib(distrib, plot_masked=False)
+        b_min = b_ppe_min if b_ppe_min is not None else np.min(distrib['theory'][:,0])
+        b_max = b_ppe_max if b_ppe_max is not None else np.max(distrib['theory'][:,0])
+        boundary_mask = (distrib['theory'][:,0] == b_min) | (distrib['theory'][:,0] ==  b_max)
+        upper_pos_mask = (distrib['theory'][:,0] == b_max) & (distrib['theory'][:,1] >= 0.)
+        upper_neg_mask = (distrib['theory'][:,0] ==  b_max) & (distrib['theory'][:,1] < 0.)
+        lower_pos_mask = (distrib['theory'][:,0] == b_min) & (distrib['theory'][:,1] >= 0.)
+        lower_neg_mask = (distrib['theory'][:,0] == b_min) & (distrib['theory'][:,1] < 0.)
+        upper_pos_mu = np.mean(distrib['mu'][upper_pos_mask], axis=0)
+        upper_pos_logvar = np.mean(distrib['logvar'][upper_pos_mask], axis=0)
+        z_theta_upper_pos = np.mod(np.arctan2(upper_pos_mu[1], upper_pos_mu[0]), 2*np.pi)
+        #print('upper_pos_mu: ', upper_pos_mu)
+        #print('upper_pos_logvar: ', upper_pos_logvar)
+        #print('upper_pos_z_theta: ', z_theta_upper_pos)
+        lower_pos_mu = np.mean(distrib['mu'][lower_pos_mask], axis=0)
+        lower_pos_logvar = np.mean(distrib['logvar'][lower_pos_mask], axis=0)
+        z_theta_lower_pos = np.mod(np.arctan2(lower_pos_mu[1], lower_pos_mu[0]), 2*np.pi)
+        #print('lower_pos_mu: ', lower_pos_mu)
+        #print('lower_pos_logvar: ', lower_pos_logvar)
+        #print('upper_pos_z_theta: ', z_theta_lower_pos)
+        upper_neg_mu = np.mean(distrib['mu'][upper_neg_mask], axis=0)
+        upper_neg_logvar = np.mean(distrib['logvar'][upper_neg_mask], axis=0)
+        z_theta_upper_neg = np.mod(np.arctan2(upper_neg_mu[1], upper_neg_mu[0]), 2*np.pi)
+        #print('upper_neg_mu: ', upper_neg_mu)
+        #print('upper_neg_logvar: ', upper_neg_logvar)
+        #print('upper_neg_z_theta: ', z_theta_upper_neg)
+        lower_neg_mu = np.mean(distrib['mu'][lower_neg_mask], axis=0)
+        lower_neg_logvar = np.mean(distrib['logvar'][lower_neg_mask], axis=0)
+        z_theta_lower_neg = np.mod(np.arctan2(lower_neg_mu[1], lower_neg_mu[0]), 2*np.pi)
+        #print('lower_neg_mu: ', lower_neg_mu)
+        #print('lower_neg_logvar: ', lower_neg_logvar)
+        #print('lower_neg_z_theta: ', z_theta_lower_neg)
+        #print('Values: ', len(distrib['values']), '\n  shape: ', distrib['values'][0].shape, '\n  [0]: ', distrib['values'][0])
+        #print('Labels: ', len(distrib['labels']), '\n  shape: ', distrib['labels'][0].shape, '\n  [0]: ', distrib['labels'][0])
+        #print('Theory: ', len(distrib['theory']), '\n  shape: ', distrib['theory'][0].shape, '\n  [:5]: ', distrib['theory'][boundary_mask])
+        #print('mu: ',     len(distrib['mu']),     '\n  shape: ', distrib['mu'][0].shape,     '\n  [:5]: ', distrib['mu'][boundary_mask])
+        #print('logvar: ', len(distrib['logvar']), '\n  shape: ', distrib['logvar'][0].shape, '\n  [:5]: ', distrib['logvar'][boundary_mask])
+
+        plot_kwargs = dict(PN_limit_theta_upper=(z_theta_upper_pos, z_theta_upper_neg), 
+                           PN_limit_theta_lower=(z_theta_lower_pos, z_theta_lower_neg),
+                           PN_limit_var_upper=(upper_pos_logvar, upper_neg_logvar), 
+                           PN_limit_var_lower=(lower_pos_logvar, lower_neg_logvar))
+
+        fig_latent = plot_latent_distrib(distrib, plot_masked=False, **plot_kwargs)
 
     if False:
         # WIP: Plot sample values as projected onto latent space
