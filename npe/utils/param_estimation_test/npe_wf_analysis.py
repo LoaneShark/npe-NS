@@ -47,6 +47,8 @@ class Encoder(nn.Module):
     def forward(self, x, cond):
         if self.use_cond:
             x = torch.cat([x, cond], dim=-1)
+        #print('Encoder forward --> dtype(x):', x.dtype)
+        #print('Encoder forward --> dtype(cond):', cond.dtype)
         x = self.fc(x)
         mu, logvar = x[:,:self.latent_dim], x[:,self.latent_dim:]
         logvar = torch.cat([logvar, logvar], dim=-1)
@@ -74,7 +76,10 @@ class Decoder(nn.Module):
     def forward(self, z, cond):
         if self.use_cond:
             z = torch.cat([z, cond], dim=-1)
+        #print('Decoder forward --> dtype(z):', z.dtype)
+        #print('Decoder forward --> dtype(cond):', cond.dtype)
         x = self.fc(z)
+        #print('Decoder forward --> dtype(x):', x.dtype)
         return x
 
 
@@ -133,10 +138,14 @@ class VAE(nn.Module):
         x = x.view(-1, self.raw_encoder.data_dim)
         x = torch.cat([x, -x], dim=0)
         cond = torch.cat([cond, cond], dim=0)
+        #print('encoder --> dtype(x):', x.dtype)
+        #print('encoder --> dtype(cond):', cond.dtype)
         mu, logvar = self.raw_encoder(x, cond)
         mu = (mu[:batch_size] - mu[batch_size:]) / 2
         mu = mu / torch.sqrt(torch.sum(mu*mu, dim=-1, keepdim=True))
         logvar = (logvar[:batch_size] + logvar[batch_size:]) / 2
+        #print('encoder --> dtype(mu):', mu.dtype)
+        #print('encoder --> dtype(logvar):', logvar.dtype)
         return mu, logvar
     
     def grid_decoder(self, z, cond):
@@ -165,6 +174,8 @@ class VAE(nn.Module):
         xout_comp = x1[:,None,:] * torch.exp(x2[:,None,:] * xin[:,:,None])
         xout = torch.sum(xout_comp, dim=-1).view(batch_size, 1, -1)
         dext = torch.sum(x2 * xout_comp[:,-1,:], dim=-1).view(batch_size, 1)
+        #print('extended_decoder --> dtype(xout):', xout.dtype)
+        #print('extended_decoder --> dtype(dext):', dext.dtype)
         return xout, dext
     
     # Obtain dephasing data from a latent space sample
@@ -176,13 +187,17 @@ class VAE(nn.Module):
     def varier(self, mu, logvar):
         z = mu + torch.exp(0.5*logvar) * torch.randn_like(mu)
         z = z / torch.sqrt(torch.sum(z*z, dim=-1, keepdim=True))
+        #print('varier --> dtype(z):', z.dtype)
         return z
 
     # Pass data through the full VAE
     def forward(self, x, cond):
         mu, logvar = self.encoder(x, cond)
         z = self.varier(mu, logvar)
+        #print('forward --> dtype(z):', z.dtype)
+        #print('forward --> dtype(cond):', cond.dtype)
         x_recon = self.decoder(z, cond)
+        #print('forward --> dtype(x_recon):', x_recon.dtype)
         return x_recon, mu, logvar
     
 
@@ -198,16 +213,18 @@ class PhaseModificationAnalysis:
         self.model.load_state_dict(torch.load(filepath, map_location=self.device)['model'])
         self.model.eval()
         self.model.train(False)
-        self.model_loggeom_freqs = np.linspace(np.log10(min_fgeom), np.log10(max_fgeom), 640)
+        self.model_loggeom_freqs = np.linspace(np.log10(min_fgeom), np.log10(max_fgeom), model_kwargs['data_dim'])
         self.norm_fac = norm_fac
 
     @classmethod
-    def gw_params_to_vae_labels(cls, mass_1, mass_2, chi_1, chi_2):
+    def gw_params_to_vae_labels(cls, mass_1, mass_2, chi_1, chi_2, lambda_1=0., lambda_2=0.):
         mc = bilby.gw.conversion.component_masses_to_chirp_mass(mass_1, mass_2)
         q = mass_2 / mass_1
         chi_sym = 0.5 * (chi_1 + chi_2)
         chi_asym = 0.5 * (chi_1 - chi_2)
-        labels = [np.log(mc), q, chi_sym, chi_asym]
+        lambda_sym = 0.5 * (lambda_1 + lambda_2)
+        lambda_asym = 0.5 * (lambda_1 - lambda_2)
+        labels = [np.log(mc), q, chi_sym, chi_asym, lambda_sym, lambda_asym]
         return labels
     
     @classmethod
@@ -219,16 +236,22 @@ class PhaseModificationAnalysis:
         m1, m2 = bilby.gw.conversion.chirp_mass_and_mass_ratio_to_component_masses(mc, q)
         chi1 = chi_sym + chi_asym
         chi2 = chi_sym - chi_asym
-        return m1, m2, chi1, chi2
+        if len(labels) > 4:
+            lambda_sym = labels[4]
+            lambda_asym = labels[5]
+
+            lambda_1 = lambda_sym + lambda_asym
+            lambda_2 = lambda_sym - lambda_asym
+            return m1, m2, chi1, chi2, lambda_1, lambda_2
+        else:
+            return m1, m2, chi1, chi2
     
-    def phase_mod(self, freqs, mass_1, mass_2, chi_1, chi_2, z_1, z_2):
+    def phase_mod(self, freqs, mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2, z_1, z_2):
         z_abs = np.sqrt(z_1*z_1 + z_2*z_2)
         if z_abs == 0.:
             return np.zeros_like(freqs)
-        #z = torch.tensor([z_1/z_abs, z_2/z_abs], dtype=torch.float32, device=self.device).view(1, -1)
         z = torch.tensor([z_1/z_abs, z_2/z_abs], device=self.device).view(1, -1)
-        l = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2)
-        #l = torch.tensor(l, dtype=torch.float32, device=self.device).view(1, -1)
+        l = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2)
         l = torch.tensor(l, device=self.device).view(1, -1)
         geom_freqs = freqs * (mass_1 + mass_2) * MSUN_S
         geom_freqs_cutoff = 10**self.model_loggeom_freqs[-1]
@@ -240,7 +263,6 @@ class PhaseModificationAnalysis:
         loggeom_freqs = np.log10(np.append(geom_freqs[mask_mid], geom_freqs_cutoff))
         loggeom_freq_range = self.model_loggeom_freqs[-1] - self.model_loggeom_freqs[0]
         xin = (loggeom_freqs - self.model_loggeom_freqs[0]) / loggeom_freq_range
-        #xin = torch.tensor(xin, dtype=torch.float32, device=self.device).view(1, -1)
         xin = torch.tensor(xin, device=self.device).view(1, -1)
         xout, dext = self.model.extended_decoder(z, l, xin)
         xout, dext = xout.view(-1).cpu().detach().numpy().flatten(), dext.item()
@@ -252,19 +274,29 @@ class PhaseModificationAnalysis:
         phases_mod *= z_abs * self.norm_fac
         return phases_mod
 
-    def extract_latent(self, phase_func, mass_1, mass_2, chi_1, chi_2):
+    def extract_latent(self, phase_func, mass_1, mass_2, chi_1, chi_2, lambda_1=0., lambda_2=0.):
         mtot = mass_1 + mass_2
         freqs = 10**self.model_loggeom_freqs / mtot / MSUN_S
         phases = phase_func(freqs) / self.norm_fac
         norm = np.sqrt(np.mean(phases*phases, axis=-1))
         if norm == 0.:
             return 0., 0.
-        local_dtype = phases.dtype if phases.dtype in [torch.float32, torch.float64] else torch.float32
-        #phases = torch.tensor(phases, dtype=local_dtype, device=self.device).view(1, 1, -1)
-        phases = torch.tensor(phases, device=self.device).view(1, 1, -1)
-        labels = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2)
-        labels = torch.tensor(labels, device=self.device).view(1, -1)
-        #labels = torch.tensor(labels, dtype=local_dtype, device=self.device).view(1, -1)
+        
+        #local_dtype = phases.dtype if phases.dtype in [torch.float32, torch.float64] else torch.float32
+        #local_dtype = torch.float32
+        local_dtype = torch.float64
+
+        #phases = torch.tensor(phases, device=self.device).view(1, 1, -1)
+        phases = torch.tensor(phases, dtype=local_dtype, device=self.device).view(1, 1, -1)
+
+        labels = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2)
+
+        #labels = torch.tensor(labels, device=self.device).view(1, -1)
+        labels = torch.tensor(labels, dtype=local_dtype, device=self.device).view(1, -1)
+
+        #print('extract_latent --> dtype(phases):', phases.dtype)
+        #print('extract_latent --> dtype(labels):', labels.dtype)
+
         z, _ = self.model.encoder(phases, labels)
         norm_std = self.model.decoder(z, labels)
         norm_std = torch.sqrt(torch.mean(norm_std*norm_std, dim=-1)).squeeze().item()
