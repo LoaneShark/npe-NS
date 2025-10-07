@@ -309,6 +309,10 @@ def plot_latent_distrib_2d(
         scatter_alpha = .75,
         ellipse_relsize_cutoff = 2.5e-2,
         ellipse_alpha = .5,
+        PN_limit_theta_upper = (None, None),
+        PN_limit_theta_lower = (None, None),
+        PN_limit_var_upper = (None, None),
+        PN_limit_var_lower = (None, None),
         **kwargs):
     from matplotlib.patches import Ellipse
     from matplotlib.lines import Line2D
@@ -347,6 +351,12 @@ def plot_latent_distrib_2d(
         legend_handles.append(Line2D([0], [0], marker=marker, linestyle='none', color=color))
         legend_labels.append(label)
         
+    if np.all([PN_limit_theta_upper[i] is not None for i in range(len(PN_limit_theta_upper))]) and np.all([PN_limit_theta_lower[i] is not None for i in range(len(PN_limit_theta_lower))]):
+        axis = plot_nonPN_region_2d(axis, 
+                          PN_limit_theta_lower, PN_limit_theta_upper,
+                          PN_limit_var_lower, PN_limit_var_upper,
+                          **kwargs)
+
     axis.legend(legend_handles, legend_labels)
     axis.set_xlim(-xylim, xylim)
     axis.set_ylim(-xylim, xylim)
@@ -368,6 +378,89 @@ def plot_latent_sample(sample, norm=1., **kwargs):
         axes[i].legend()
     return fig
 
+# TODO: Fix the shading functionality when the non-PN region is not oriented vertically
+def plot_nonPN_region_2d(axis,           
+        PN_limit_theta_upper = (None, None),
+        PN_limit_theta_lower = (None, None),
+        PN_limit_var_upper = (None, None),
+        PN_limit_var_lower = (None, None),
+        non_PN_radius = 1.5,
+        **kwargs):
+
+    theta1 = PN_limit_theta_upper[0]
+    x1 = non_PN_radius*np.cos(theta1)
+    y1 = non_PN_radius*np.sin(theta1)
+    theta2 = PN_limit_theta_lower[1]
+    x2 = non_PN_radius*np.cos(theta2)
+    y2 = non_PN_radius*np.sin(theta2)
+
+    if np.all([PN_limit_var_upper[i] is not None for i in range(len(PN_limit_var_upper))]) and np.all([PN_limit_var_lower[i] is not None for i in range(len(PN_limit_var_lower))]):
+        dx1 = np.exp(0.5*PN_limit_var_upper[0][0])#*(x1/np.abs(x1))
+        dy1 = np.exp(0.5*PN_limit_var_upper[0][1])#*(y1/np.abs(y1))
+        #print('dx1: ', dx1)
+        #print('dy1: ', dy1)
+        dx2 = np.exp(0.5*PN_limit_var_lower[1][0])#*(x2/np.abs(x2))
+        dy2 = np.exp(0.5*PN_limit_var_lower[1][1])#*(y2/np.abs(y2))
+        #print('dx2: ', dx2)
+        #print('dy2: ', dy2)
+        dtheta1 = np.arctan(np.abs(0.5*(dy1**2 + dx1**2)**(0.5)))
+        #print('dtheta1: ', dtheta1)
+        dtheta2 = np.arctan(np.abs(0.5*(dy2**2 + dx2**2)**(0.5)))
+        #print('dtheta2: ', dtheta2)
+        x1 = non_PN_radius*np.cos(theta1-dtheta1*np.sign(theta1-theta2))
+        y1 = non_PN_radius*np.sin(theta1-dtheta1*np.sign(theta1-theta2))
+        x2 = non_PN_radius*np.cos(theta2+dtheta2*np.sign(theta1-theta2))
+        y2 = non_PN_radius*np.sin(theta2+dtheta2*np.sign(theta1-theta2))
+    
+    axis.plot([x1, 0], [y1, 0], color='grey', linestyle=':')
+    axis.plot([x2, 0], [y2, 0], color='grey', linestyle=':')
+    non_PN_angles_z2 = non_PN_radius * np.sin(np.linspace(theta1, theta2, 100))
+    x12mid = 0.5*(x1+x2)
+    y12mid = 0.5*(y1+y2)
+    non_PN_angles_z1_base = np.concatenate([np.linspace(x1, 0, 50),
+                                            np.linspace(0, x2, 50)])
+    non_PN_angles_z2_base = np.concatenate([np.linspace(y1, 0, 50),
+                                            np.linspace(0, y2, 50)])
+    
+    #axis.fill_between(non_PN_angles_z1_base, non_PN_angles_z2, y2=non_PN_angles_z2_base, color='lightgrey', alpha=0.5, label='non-PN region')
+
+    theta3 = PN_limit_theta_upper[1]
+    x3 = non_PN_radius*np.cos(theta3)
+    y3 = non_PN_radius*np.sin(theta3)
+    theta4 = PN_limit_theta_lower[0]
+    x4 = non_PN_radius*np.cos(theta4)
+    y4 = non_PN_radius*np.sin(theta4)
+
+    if np.all([PN_limit_var_upper[i] is not None for i in range(len(PN_limit_var_upper))]) and np.all([PN_limit_var_lower[i] is not None for i in range(len(PN_limit_var_lower))]):
+        dx3 = np.exp(0.5*PN_limit_var_upper[1][0])*(x3/np.abs(x3))
+        dy3 = np.exp(0.5*PN_limit_var_upper[1][1])*(y3/np.abs(y3))
+        #print('dx3: ', dx3)
+        #print('dy3: ', dy3)
+        dx4 = np.exp(0.5*PN_limit_var_lower[0][0])*(x4/np.abs(x4))
+        dy4 = np.exp(0.5*PN_limit_var_lower[0][1])*(y4/np.abs(y4))
+        #print('dx4: ', dx4)
+        #print('dy4: ', dy4)
+        dtheta3 = np.arctan(np.abs(0.5*(dy3**2 + dx3**2)**(0.5)))
+        #print('dtheta3: ', dtheta3)
+        dtheta4 = np.arctan(np.abs(0.5*(dy4**2 + dx4**2)**(0.5)))
+        #print('dtheta4: ', dtheta4)
+        x3 = non_PN_radius*np.cos(theta3-dtheta3*np.sign(theta3-theta4))
+        y3 = non_PN_radius*np.sin(theta3-dtheta3*np.sign(theta3-theta4))
+        x4 = non_PN_radius*np.cos(theta4+dtheta4*np.sign(theta3-theta4))
+        y4 = non_PN_radius*np.sin(theta4+dtheta4*np.sign(theta3-theta4))
+
+    axis.plot([x3, 0], [y3, 0], color='grey', linestyle=':')
+    axis.plot([x4, 0], [y4, 0], color='grey', linestyle=':')
+    non_PN_angles_z2_sec = non_PN_radius * np.sin(np.linspace(theta3, theta4, 100))
+    x34mid = 0.5*(x3+x4)
+    y34mid = 0.5*(y3+y4)
+    non_PN_angles_z1_base_sec = np.concatenate([np.linspace(x3, 0., 50),
+                                            np.linspace(0., x4, 50)])
+    non_PN_angles_z2_base_sec = np.concatenate([np.linspace(y3, 0., 50),
+                                            np.linspace(0., y4, 50)])
+    #axis.fill_between(non_PN_angles_z1_base_sec, non_PN_angles_z2_sec, y2=non_PN_angles_z2_base_sec, color='lightgrey', alpha=0.5)
+
+    return axis
 
 def get_ASD(freqs, asd_path, head=7, run_type='BH', use_virgo=False):
     """
