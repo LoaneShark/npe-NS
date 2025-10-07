@@ -123,6 +123,7 @@ def _get_deformation_terms(
 
 def _get_pn_coeffs(m1, m2, chi1z, chi2z, l1=None, l2=None, cq1=None, cq2=None):
     num_samples = len(m1)
+    print('num_samples: ', num_samples)
     param_vecs = [lal.CreateREAL8Vector(num_samples) for _ in range(8)]
     param_vecs[0].data = m1
     param_vecs[1].data = m2
@@ -233,6 +234,8 @@ def _generate_meta_data_chunks(
     b = np.repeat(b_ppe, num_samples)
     print('----------------------------------')
     print('b_ppe: ', b_ppe)
+    print('n_ppe: ', n_ppe)
+    print('num_params: ', num_params)
     ref_min = np.repeat(ppe_ref_min, num_samples)
     ref_max = np.repeat(ppe_ref_max, num_samples)
     if not ppe_ref_min_in_geometric_units:
@@ -296,13 +299,13 @@ def _populate_chunk(metadata_array,
                     num_freqs=1000, log_spacing=False,
                     freq_in_natural_units=False,
                     minus_gr=False, labels_only=False,
-                    n_params=4):
+                    n_params=4, n_ppe=1):
     """Generate and populate the phasing
     
     Parameters
     ----------
     metadata_array : array_like
-        array containing masses, aligned spins, length-scale
+        array containing masses, aligned spins, tidal terms, length-scale
     fmin : float
         minimum frequency for phasing array
     fmax : float
@@ -314,7 +317,7 @@ def _populate_chunk(metadata_array,
     freq_in_natural_units : bool
         frequency is in geometric/SI units i.e. Hz
     n_params : int
-        number of intrinsic binary parameters. 4 for BBH, 8 for BNS (NOT FULLY IMPLEMENTED).
+        number of intrinsic binary parameters. 4 for BBH, 6 for BNS, 8 for BNS including quadmon terms.
     """
     # FIXME
     assert minus_gr
@@ -334,7 +337,7 @@ def _populate_chunk(metadata_array,
     #print('metadata_array: ', metadata_array.shape)
     #print('metadata_array: ', metadata_array[0])
 
-    n_ppe = (metadata_array.shape[-1] - (n_params + 3)) // 2 + 2
+    #n_ppe = (metadata_array.shape[-1] - (n_params + 3)) // 2 + 2
     #print('n_ppe: ', n_ppe)
     ppe_keys = [f'dpsi_bar_{i}' for i in range(2, n_ppe)]
     #print('ppe_keys: ', ppe_keys)
@@ -426,6 +429,7 @@ def main():
                     minus_gr=args.minus_gr,
                     labels_only=args.labels_only,
                     n_params=n_params,
+                    n_ppe=args.n_ppe,
                 )
             ) for chunk in chunks
         ]
