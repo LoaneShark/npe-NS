@@ -22,6 +22,9 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from scipy.interpolate import interp1d
+
+from generate_dataset import _get_pn_coeffs, _get_coeff_bound, _convert_f_to_fgeom
+
 torch.set_default_dtype(torch.float64)
 
 def get_cli():
@@ -41,9 +44,9 @@ def get_cli():
                         help="Set RNG seed for training.")
     parser.add_argument("--data-dim", type=int, default=640,
                         help="Number of frequency points used (dimensionality of input/output layer).")
-    parser.add_argument("--include-tidal", action=argparse.BooleanOptionalAction, default=False, required=False,
+    parser.add_argument("--include-tidal-params", action=argparse.BooleanOptionalAction, default=False, required=False,
                         help="Include tidal deformation terms in the parameter space.")
-    parser.add_argument("--include-tidal-full", action=argparse.BooleanOptionalAction, default=False, required=False,
+    parser.add_argument("--include-tidal-params-full", action=argparse.BooleanOptionalAction, default=False, required=False,
                         help="Include tidal and spin induced deformation terms in the parameter space.")
     parser.add_argument("--include-tidal-data", action=argparse.BooleanOptionalAction, default=False, required=False,
                         help="Include tidal deformation waveform data, up to 5PN.")
@@ -53,7 +56,9 @@ def get_cli():
                         help="Whether or not to suppress latent space support at 2.5PN and 4PN orders.")
     parser.add_argument("--penalize-highPN", action=argparse.BooleanOptionalAction, default=None, required=False,
                         help="Penalize latent space from learning high-PN-like dephasing functions in the non-PN region.")
-    parser.add_argument("--num-epochs", type=int, default=50,
+    parser.add_argument("--num-epochs-shape", type=int, default=50,
+                        help="Number of epochs to use (each) for training the scale and shape functions.")
+    parser.add_argument("--num-epochs-scale", type=int, default=50,
                         help="Number of epochs to use (each) for training the scale and shape functions.")
     
     parser.add_argument("--train-lr", type=float, default=1e-4,
@@ -64,6 +69,8 @@ def get_cli():
                         help="Multiplicative learning rate decay factor (<1).")
     parser.add_argument("--train-kl-coeff", type=float, default=1e-6,
                         help="Coefficient to weight KL divergence term in loss function relative to reconstruction error term.")
+    parser.add_argument("--train-highPN-coeff", type=float, default=0.,
+                        help="Coefficient to weight penalization of highPN behavior in latent space.")
     
     args = parser.parse_args()
     return args
@@ -251,7 +258,6 @@ def get_loss_scale(scale1, scale2):
     log_scale2 = torch.log(scale2)
     return F.mse_loss(log_scale1, log_scale2)
 
-# Reconstruction loss for variational autoencoder
 def get_loss_recon_var(v, v_recon):
     shape1, scale1 = get_shape_and_scale(v)
     shape2, scale2 = get_shape_and_scale(v_recon)
@@ -259,37 +265,12 @@ def get_loss_recon_var(v, v_recon):
     loss_scale = get_loss_scale(scale1, scale2)
     return loss_shape, loss_scale
 
-# Reconstruction loss
 def get_loss_recon(v, v_recon):
     shape1, scale1 = get_shape_and_scale(v)
     shape2, scale2 = get_shape_and_scale(v_recon)
     loss_shape = get_loss_shape(v, scale1*shape2)
     loss_scale = get_loss_scale(scale1, scale2)
     return loss_shape, loss_scale
-
-# TODO: Implement effective cycles recon error
-def get_loss_recon_EC(v, v_recon):
-    #shape1, scale1 = get_shape_and_scale(v)
-    #shape2, scale2 = get_shape_and_scale(v_recon)
-    #loss_shape = get_loss_shape(v, scale1*shape2)
-    #loss_scale = get_loss_scale(scale1, scale2)
-
-    # TODO: For now, assume h_c ~ (Mf)^(-7/6)
-    amplitudes = None
-    #amplitudes = model.loggeom_freqs
-    asd = None
-    #asd = model.asd
-    
-    if amplitudes is None or asd is None:
-        return None
-    
-    # L_recon (v, v_recon) = \sum_{f} (A(f) / ASD(f)^2) (v(f) - v_recon(f))^2
-    loss_recon = np.sum(
-        (amplitudes / (asd**2)) * 
-        (v - v_recon)**2, axis=-1
-    )
-
-    return loss_recon
 
 def kl_div_diagonal_gaussian_to_standard_gaussian(mu, logvar, dim=None, with_mu=True):
     # changed to ignore the mu effect
@@ -303,13 +284,52 @@ def kl_div_diagonal_gaussian_to_standard_gaussian(mu, logvar, dim=None, with_mu=
         kld = torch.sum(kld, dim=dim)
     return kld
 
+
+def get_highPN_loss(v_recon):
+    # By default, assume 10Hz detector minimum and IMRPhenom inspiral cutoff maximum frequency bounds
+    # TODO: Avoid hardcoding all of these values (incl. frequency grid size and spacing)
+    ref_min = 4e-5
+    ref_max = 0.018
+    num_f = v_recon.shape[2]
+    freqs = np.logspace(np.log10(ref_min), np.log10(ref_max), num_f)
+    v_0 = (np.pi * freqs) ** (1/3)
+
+    shape1, scale1 = get_shape_and_scale(torch.abs(v_recon))
+
+    # Get latent space z samples
+    loss_highPN_arr = []
+    signs = [1.] 
+    loss_shape_weights = {0: 100., 1: 0.01, 2: 0.01, 3: 100., 4: 0.01, 5: 0.01, 6: 0.1}
+    for k in range(0, 8):
+        coeff_bound = 1.
+        for s in signs:
+            v_highPN_k = torch.tensor(s * coeff_bound * v_0 ** k)
+
+            v_highPN = v_highPN_k.unsqueeze(0).repeat(v_recon.shape[0], 1)
+            v_highPN.resize(v_recon.shape[0], 1, num_f)
+
+            shape2, scale2 = get_shape_and_scale(v_highPN)
+            shape2 = shape2.reshape(v_recon.shape[0], 1, num_f)
+            
+            v_loss_highPN = get_loss_shape(shape1, shape2)
+            loss_shape_coeff = 1. if k not in loss_shape_weights else loss_shape_weights[k]
+            loss_highPN_arr.append(loss_shape_coeff * v_loss_highPN)
+
+    loss_highPN = 1. / sum(loss_highPN_arr)
+    return loss_highPN
+
 def vae_loss_fn(model: VAE , v, l, t, *args, 
                 kl_coeff=1., 
                 shape_coeff=1., scale_coeff=1., 
                 recon_coeff=1., recon_scale_coeff=1.,
+                nonPN_coeff=1.,
                 with_mu=True, recon_use_mse=False,
                 **kwargs):
     v, l, t = align_data_format_with_model(model, v, l, t)
+
+    #print('v.shape: ', v.shape)
+    #print('l.shape: ', l.shape)
+    #print('t.shape: ', t.shape)
     
     mu, logvar = model.encoder(v, l)
     loss_kld = kl_div_diagonal_gaussian_to_standard_gaussian(mu, logvar, dim=-1, with_mu=with_mu)
@@ -326,8 +346,15 @@ def vae_loss_fn(model: VAE , v, l, t, *args,
     else:
         loss_shape_recon, loss_scale_recon = get_loss_recon(v, v_recon)
         loss_recon = recon_coeff * loss_shape_recon + recon_scale_coeff * loss_scale_recon
+    
+    if nonPN_coeff != 0.:
+        #loss_highPN = get_highPN_loss_with_scale(v_recon, l)
+        loss_highPN = get_highPN_loss(v_recon)
+        loss_nonPN = nonPN_coeff * loss_highPN
+    else:
+        loss_nonPN = 0.
         
-    loss = loss_kld + loss_var + loss_recon
+    loss = loss_kld + loss_var + loss_recon + loss_nonPN
     return loss
 
 # TODO: Modify vae loss function to use effective cycles as reconstruction loss
@@ -390,6 +417,7 @@ def vae_diagnosis_fn(model, v, l, t, *args, with_mu=True, **kwargs):
     loss_shape, loss_scale = get_loss_recon_var(v, v_recon)
     loss_shape_recon, _ = get_loss_recon(v, v_recon)
     loss_recon = F.mse_loss(v, v_recon)
+    loss_nonPN = get_highPN_loss(v_recon)
     
     metrics = dict(
         kl_div=loss_kld,
@@ -397,6 +425,7 @@ def vae_diagnosis_fn(model, v, l, t, *args, with_mu=True, **kwargs):
         err_shape_rescaled=loss_shape_recon,
         err_shape=loss_shape,
         err_scale=loss_scale,
+        err_highPN=loss_nonPN,
     )
     distrib = dict(
         values=v,
@@ -423,11 +452,9 @@ def main():
     # args.run_title = "npE_network"
     args.resume_title = args.run_title
     args.resume_epochs = 0
-    # TODO: CLI arg support to modify epochs/hyperparams
-    num_epochs = args.num_epochs
-    args.add_epochs = num_epochs
+    args.add_epochs = args.num_epochs_shape
     args.epochs_per_latent_plot = [(10, 1), (None, 10)]
-    args.epochs_per_checkpoint = num_epochs
+    args.epochs_per_checkpoint = min(50, args.num_epochs_shape, args.num_epochs_scale)
     args.optimizer_override = True
     args.scheduler_override = True
 
@@ -435,7 +462,7 @@ def main():
     args.batch_size_val = 1024
     args.batches_per_summary = 0.1
 
-    args.penalize_highPN
+    args.penalize_highPN = bool(args.penalize_highPN)
 
     args.lr = args.train_lr                  # learning rate
     args.wd = args.train_wd                  # weight decay
@@ -444,6 +471,7 @@ def main():
         kl_coeff=args.train_kl_coeff, 
         shape_coeff=1., scale_coeff=0., 
         recon_coeff=0., recon_scale_coeff=0.,
+        nonPN_coeff=args.train_highPN_coeff if args.penalize_highPN else 0.,
         with_mu=False, recon_use_mse=False, 
     )
     args.diagnosis_kwargs = dict(with_mu=False)
@@ -453,9 +481,9 @@ def main():
     # also, BNS signals may benefit from a denser frequency grid
     if args.run_type in ['NS', 'NSBH', 'CBC']:
         data_dim = args.data_dim
-        if args.include_tidal_full:
+        if args.include_tidal_params_full:
             cond_dim = 8
-        elif args.include_tidal:
+        elif args.include_tidal_params:
             cond_dim = 6
         else:
             cond_dim = 4
@@ -567,7 +595,7 @@ def main():
                 #'ppe-plus5.pkl'
             ]
     args.dataset_type = PhasingDataset
-    args.dataset_kwargs = {'use_tidal': args.include_tidal, 'use_tidal_full': args.include_tidal_full}
+    args.dataset_kwargs = {'use_tidal_params': args.include_tidal_params, 'use_tidal_params_full': args.include_tidal_params_full}
     args.dataset_n_ppe = 1
     args.dataset_norm_fac = {}
     args.dataset_sample_size = 0.25
@@ -581,10 +609,10 @@ def main():
 
     # args.run_title = "npE_network"
     args.resume_title = args.run_title
-    args.resume_epochs = num_epochs
-    args.add_epochs = num_epochs
-    args.epochs_per_latent_plot = num_epochs
-    args.epochs_per_checkpoint = num_epochs
+    args.resume_epochs = args.num_epochs_shape
+    args.add_epochs = args.num_epochs_scale
+    args.epochs_per_latent_plot =  min(50, args.num_epochs_shape, args.num_epochs_scale)
+    args.epochs_per_checkpoint =  min(50, args.num_epochs_shape, args.num_epochs_scale)
     args.optimizer_override = True
     args.scheduler_override = True
 
@@ -601,6 +629,7 @@ def main():
         kl_coeff=0., 
         shape_coeff=0., scale_coeff=0., 
         recon_coeff=0., recon_scale_coeff=1.,
+        nonPN_coeff=0.,
         with_mu=False, recon_use_mse=False, 
     )
     args.diagnosis_kwargs = dict(with_mu=False)
