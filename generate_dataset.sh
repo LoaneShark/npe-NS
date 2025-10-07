@@ -11,7 +11,7 @@ CHI_MIN_BH=-0.99
 CHI_MAX_BH=0.99
 
 # Neutron Star parameters
-M_MIN_NS=0.6
+M_MIN_NS=0.5
 M_MAX_NS=3.0
 CHI_MIN_NS=-0.1
 CHI_MAX_NS=0.1
@@ -93,7 +93,7 @@ then
   # TODO: Double check f_min and f_max for IMRPhenomPv2_NRTidalv2 case
   F_MIN=0.00004   # 10 Hz (detector limit)
   F_MAX=0.018     # IMRPhenomD inspiral cutoff
-  F_NUM=1280      # Number of frequency points
+  F_NUM=640      # Number of frequency points
 
 elif [[ "$systype" == "NSBH" ]]
 then
