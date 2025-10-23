@@ -191,13 +191,14 @@ MSUN_S  = MSUN_KM / lal.C_SI * 1e3
 class PhaseModificationAnalysis:
     device = torch.device('cpu')
 
-    def __init__(self, filepath, model_kwargs, min_fgeom=4e-4, max_fgeom=1.8e-2, norm_fac=1.):
+    def __init__(self, filepath, model_kwargs, min_fgeom=4e-4, max_fgeom=1.8e-2, norm_fac=1., ppe_ref_mc=False):
         self.model = VAE(**model_kwargs).to(self.device)
         self.model.load_state_dict(torch.load(filepath, map_location=self.device)['model'])
         self.model.eval()
         self.model.train(False)
         self.model_loggeom_freqs = np.linspace(np.log10(min_fgeom), np.log10(max_fgeom), model_kwargs.get('data_dim', 640))
         self.norm_fac = norm_fac
+        self.ppe_ref_mc = ppe_ref_mc
 
     @classmethod
     def gw_params_to_vae_labels(cls, mass_1, mass_2, chi_1, chi_2, lambda_1=0., lambda_2=0.):
@@ -239,7 +240,11 @@ class PhaseModificationAnalysis:
         z = torch.tensor([z_1/z_abs, z_2/z_abs], device=self.device, dtype=torch.float32).view(1, -1)
         l = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2)
         l = torch.tensor(l, device=self.device, dtype=torch.float32).view(1, -1)
-        geom_freqs = freqs * (mass_1 + mass_2) * MSUN_S
+        if self.ppe_ref_mc:
+            mc = bilby.gw.conversion.component_masses_to_chirp_mass(mass_1, mass_2)
+            geom_freqs = freqs * mc * MSUN_S
+        else:
+            geom_freqs = freqs * (mass_1 + mass_2) * MSUN_S
         geom_freqs_cutoff = 10**self.model_loggeom_freqs[-1]
         # mask_low = geom_freqs < 10**self.model_loggeom_freqs[0]
         # mask_high = geom_freqs > 10**self.model_loggeom_freqs[-1]
@@ -261,8 +266,12 @@ class PhaseModificationAnalysis:
         return phases_mod
 
     def extract_latent(self, phase_func, mass_1, mass_2, chi_1, chi_2, lambda_1=0., lambda_2=0.):
-        mtot = mass_1 + mass_2
-        freqs = 10**self.model_loggeom_freqs / mtot / MSUN_S
+        if self.ppe_ref_mc:
+            mc = bilby.gw.conversion.component_masses_to_chirp_mass(mass_1, mass_2)
+            freqs = 10**self.model_loggeom_freqs / mc / MSUN_S
+        else:
+            mtot = mass_1 + mass_2
+            freqs = 10**self.model_loggeom_freqs / mtot / MSUN_S
         phases = phase_func(freqs) / self.norm_fac
         norm = np.sqrt(np.mean(phases*phases, axis=-1))
         if norm == 0.:

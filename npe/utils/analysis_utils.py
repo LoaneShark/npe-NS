@@ -375,7 +375,10 @@ def plot_dephasing(network_path, base_path=project_base_path, root_path='.', net
         chi_asym = 0.5 * (chi_1 - chi_2)
         lambda_sym = 0.5 * (lambda_1 + lambda_2)
         lambda_asym = 0.5 * (lambda_1 - lambda_2)
-        labels = [np.log(mc), q, chi_sym, chi_asym, lambda_sym, lambda_asym]
+        if cond_dim == 6:
+            labels = [np.log(mc), q, chi_sym, chi_asym, lambda_sym, lambda_asym]
+        else:
+            labels = [np.log(mc), q, chi_sym, chi_asym]
         return labels
 
     # Loop the below over all sampled z_theta values
@@ -580,7 +583,7 @@ def get_test_dataset(base_path=project_base_path, dataset_name=None, network_typ
 
 # Function to import a dataset from a file
 # TODO: More robust support for different network or dataset structure (partial/full tidal data, etc.)
-def get_dataloader(base_path=project_base_path, dataset_name=None, network_type='BBH', dataset_seed=1234, subset=None, use_tidal_data=False, use_tidal_data_full=False):
+def get_dataloader(base_path=project_base_path, dataset_name=None, network_type='BBH', dataset_seed=1234, subset=None, use_tidal_params=False, use_tidal_params_full=False, use_tidal_data=False):
     if network_type in ['BNS', 'NSBH']:
         network_type_short = 'NS' if network_type == 'BNS' else 'NSBH'
         dataset_filenames = [
@@ -598,7 +601,7 @@ def get_dataloader(base_path=project_base_path, dataset_name=None, network_type=
             "ppe-minus2.pkl",
             "ppe-minus1.pkl",
         ]
-        if use_tidal_data or use_tidal_data_full:
+        if use_tidal_data:
             dataset_filenames += [
                 "ppe-minus0.pkl",
                 "ppe-plus1.pkl",
@@ -642,7 +645,7 @@ def get_dataloader(base_path=project_base_path, dataset_name=None, network_type=
                 dataset_filenames, root_dir=dataset_rootdir, 
                 sample_size=dataset_sample_size, subset_split=dataset_subset_split, random_state=dataset_seed, 
                 dataset_type=dataset_type, dataset_kwargs=dict(n_ppe=dataset_n_ppe, norm_fac=dataset_norm_fac, 
-                                                               use_tidal=use_tidal_data, use_tidal_full=use_tidal_data_full))
+                                                               use_tidal_params=use_tidal_params, use_tidal_params_full=use_tidal_params_full))
         
     batch_size_train = 64
     batch_size_val = 1024
@@ -835,6 +838,8 @@ def plot_latent_space_distribution(network_path, base_path=project_base_path, ro
                            PN_limit_theta_lower=(z_theta_lower_pos, z_theta_lower_neg),
                            PN_limit_var_upper=(upper_pos_logvar, upper_neg_logvar), 
                            PN_limit_var_lower=(lower_pos_logvar, lower_neg_logvar))
+        
+        print('\n'.join([f'{key}: {val}' for key, val in plot_kwargs.items()]))
 
         fig_latent = plot_latent_distrib(distrib, plot_masked=False, **plot_kwargs)
 

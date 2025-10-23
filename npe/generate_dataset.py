@@ -9,6 +9,7 @@ from tqdm import tqdm
 from astropy import units as u
 from astropy import constants as c
 import lal, lalsimulation
+from bilby.gw.conversion import component_masses_to_chirp_mass
 
 def get_cli():
     parser = argparse.ArgumentParser(
@@ -77,6 +78,8 @@ def get_cli():
                         help="Supply for log-spaced freqs.")
     parser.add_argument("--freq-in-geometric-units", action='store_true', default=False, 
                         help="Frequency is in natural units.")
+    parser.add_argument("--freqs-using-mc", action='store_true', default=False, 
+                        help="Frequency in natural units defined with chirp mass instead of total mass.")
     parser.add_argument("--minus-gr", action='store_true', default=False,
                         help="Output only correction to GR.")
     parser.add_argument("--include-tidal", action=argparse.BooleanOptionalAction, default=False, required=False,
@@ -207,6 +210,11 @@ def _convert_f_to_fgeom(f, mtot):
     fgeom = fgeom.to('').value
     return fgeom
 
+def _convert_f_to_fgeom_mc(f, mc):
+    fgeom = f * u.Hz * mc * u.solMass
+    fgeom = fgeom * c.G / c.c**3
+    fgeom = fgeom.to('').value
+    return fgeom
 
 def _generate_meta_data_chunks(
         m1_min, m2_min, m1_max, m2_max,
@@ -216,7 +224,8 @@ def _generate_meta_data_chunks(
         b_ppe, n_ppe, 
         ppe_ref_min, ppe_ref_min_in_geometric_units,
         ppe_ref_max, ppe_ref_max_in_geometric_units,
-        num_samples, seed, num_chunks, num_params):
+        num_samples, seed, num_chunks, num_params,
+        ppe_use_mc_freqs):
     """Get meta data in chunks"""
     np.random.seed(seed)
     m1, m2, chi1z, chi2z = _get_masses_and_spins(
@@ -232,16 +241,25 @@ def _generate_meta_data_chunks(
         )
 
     b = np.repeat(b_ppe, num_samples)
+    mc = component_masses_to_chirp_mass(m1, m2)
     print('----------------------------------')
     print('b_ppe: ', b_ppe)
     print('n_ppe: ', n_ppe)
     print('num_params: ', num_params)
+    #print('b.shape: ', b.shape)
+    #print('mc.shape:', mc.shape)
     ref_min = np.repeat(ppe_ref_min, num_samples)
     ref_max = np.repeat(ppe_ref_max, num_samples)
     if not ppe_ref_min_in_geometric_units:
-        ref_min = _convert_f_to_fgeom(ref_min, m1 + m2)
+        if ppe_use_mc_freqs:
+            ref_min = _convert_f_to_fgeom_mc(ref_min, mc)
+        else:
+            ref_min = _convert_f_to_fgeom(ref_min, m1 + m2)
     if not ppe_ref_max_in_geometric_units:
-        ref_max = _convert_f_to_fgeom(ref_max, m1 + m2)
+        if ppe_use_mc_freqs:
+            ref_min = _convert_f_to_fgeom_mc(ref_min, mc)
+        else:
+            ref_max = _convert_f_to_fgeom(ref_max, m1 + m2)
 
     #print('ref_min: ', ref_min)
     #print('ref_max: ', ref_max)
@@ -298,6 +316,7 @@ def _populate_chunk(metadata_array,
                     fmin=10., fmax=1000., 
                     num_freqs=1000, log_spacing=False,
                     freq_in_natural_units=False,
+                    freqs_using_mc=False,
                     minus_gr=False, labels_only=False,
                     n_params=4, n_ppe=1):
     """Generate and populate the phasing
@@ -316,6 +335,8 @@ def _populate_chunk(metadata_array,
         log/linear spacing of frequency points
     freq_in_natural_units : bool
         frequency is in geometric/SI units i.e. Hz
+    freqs_using_mc : bool
+        frequency in dimensionless units is goes as (Mc * f) instead of (Mtot * f)
     n_params : int
         number of intrinsic binary parameters. 4 for BBH, 6 for BNS, 8 for BNS including quadmon terms.
     """
@@ -353,6 +374,9 @@ def _populate_chunk(metadata_array,
         return r
 
     mtot = np.sum(metadata_array[:,:2], axis=-1, keepdims=True)
+    #print('mtot.shape: ', mtot.shape)
+    mc = np.array(component_masses_to_chirp_mass(metadata_array[:,0], metadata_array[:,1])).reshape(mtot.shape)
+    #print('mc.shape: ', mc.shape)
     b = metadata_array[:,[n_params]]
     k = b + np.arange(n_ppe)[None,:]
     gamma_bar = metadata_array[:,[n_params+n_ppe]]
@@ -372,7 +396,10 @@ def _populate_chunk(metadata_array,
         freqs = np.logspace(np.log10(fmin), np.log10(fmax), num_freqs)
     freqs = np.tile(freqs, (metadata_array.shape[0], 1))
     if not freq_in_natural_units:
-        freqs = _convert_f_to_fgeom(freqs, mtot)
+        if freqs_using_mc:
+            freqs = _convert_f_to_fgeom_mc(freqs, mc)
+        else:
+            freqs = _convert_f_to_fgeom(freqs, mtot)
     v = (np.pi * freqs) ** (1/3)
     # phi = (beta_b * u_b**b)  +  (beta_(b+1) * u_(b+1)**(b+1)) +  (beta_(b+2) * u_(b+2)**(b+2)) + ...
     phases = delta_bars[:,None,:] * v[:,:,None] ** k[:,None,:]
@@ -411,7 +438,8 @@ def main():
         args.ppe_ref_min, args.ppe_ref_min_in_geometric_units,
         args.ppe_ref_max, args.ppe_ref_max_in_geometric_units,
         args.num_samples, args.seed,
-        args.pool, n_params
+        args.pool, n_params,
+        args.freqs_using_mc
     )
 
     # Generate dataset in parallel
@@ -426,6 +454,7 @@ def main():
                     num_freqs=args.num_freqs,
                     log_spacing=args.logspace_freqs,
                     freq_in_natural_units=args.freq_in_geometric_units,
+                    freqs_using_mc=args.freqs_using_mc,
                     minus_gr=args.minus_gr,
                     labels_only=args.labels_only,
                     n_params=n_params,

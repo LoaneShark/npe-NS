@@ -29,6 +29,8 @@ CQ_MAX=0
 #R_MIN_NS=9
 #R_MAX_NS=12
 
+EXTRA_TERMS="--freqs-using-mc"
+#EXTRA_TERMS=""
 
 if [[ "$systype" == "BH" ]]
 then
@@ -90,7 +92,6 @@ then
   #R_MAX_2=$R_MAX_NS
 
   # Relevant frequency range
-  # TODO: Double check f_min and f_max for IMRPhenomPv2_NRTidalv2 case
   F_MIN=0.00004   # 10 Hz (detector limit)
   F_MAX=0.018     # IMRPhenomD inspiral cutoff
   F_NUM=640      # Number of frequency points
@@ -201,7 +202,8 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus1.pkl
+  --output-file $dataset_folder/ppe-minus1.pkl \
+  $EXTRA_TERMS
   
 python npe/generate_dataset.py \
   --b-ppe -2 \
@@ -223,7 +225,8 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus2.pkl
+  --output-file $dataset_folder/ppe-minus2.pkl \
+  $EXTRA_TERMS
 
 python npe/generate_dataset.py \
   --b-ppe -3 \
@@ -245,7 +248,8 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus3.pkl
+  --output-file $dataset_folder/ppe-minus3.pkl \
+  $EXTRA_TERMS
 
 python npe/generate_dataset.py \
   --b-ppe -4 \
@@ -267,7 +271,8 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus4.pkl
+  --output-file $dataset_folder/ppe-minus4.pkl \
+  $EXTRA_TERMS
 
 python npe/generate_dataset.py \
   --b-ppe -5 \
@@ -289,7 +294,8 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus5.pkl
+  --output-file $dataset_folder/ppe-minus5.pkl \
+  $EXTRA_TERMS
 
 
 python npe/generate_dataset.py \
@@ -312,7 +318,8 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus6.pkl
+  --output-file $dataset_folder/ppe-minus6.pkl \
+  $EXTRA_TERMS
 
 python npe/generate_dataset.py \
   --b-ppe -7 \
@@ -334,7 +341,8 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus7.pkl
+  --output-file $dataset_folder/ppe-minus7.pkl \
+  $EXTRA_TERMS
 
 python npe/generate_dataset.py \
   --b-ppe -8 \
@@ -356,7 +364,8 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus8.pkl
+  --output-file $dataset_folder/ppe-minus8.pkl \
+  $EXTRA_TERMS
 
 python npe/generate_dataset.py \
   --b-ppe -9 \
@@ -378,7 +387,8 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus9.pkl
+  --output-file $dataset_folder/ppe-minus9.pkl \
+  $EXTRA_TERMS
 
 python npe/generate_dataset.py \
   --b-ppe -10 \
@@ -400,7 +410,8 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus10.pkl
+  --output-file $dataset_folder/ppe-minus10.pkl \
+  $EXTRA_TERMS
 
 python npe/generate_dataset.py \
   --b-ppe -11 \
@@ -422,7 +433,8 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus11.pkl
+  --output-file $dataset_folder/ppe-minus11.pkl \
+  $EXTRA_TERMS
 
 python npe/generate_dataset.py \
   --b-ppe -12 \
@@ -444,7 +456,8 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus12.pkl
+  --output-file $dataset_folder/ppe-minus12.pkl \
+  $EXTRA_TERMS
 
 python npe/generate_dataset.py \
   --b-ppe -13 \
@@ -466,4 +479,5 @@ python npe/generate_dataset.py \
   --num-samples $nsample \
   --seed $seed \
   --pool 2 \
-  --output-file $dataset_folder/ppe-minus13.pkl
+  --output-file $dataset_folder/ppe-minus13.pkl \
+  $EXTRA_TERMS
