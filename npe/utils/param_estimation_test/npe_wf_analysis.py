@@ -215,16 +215,20 @@ class PhaseModificationAnalysis:
         self.model.train(False)
         self.model_loggeom_freqs = np.linspace(np.log10(min_fgeom), np.log10(max_fgeom), model_kwargs['data_dim'])
         self.norm_fac = norm_fac
+        self.cond_dim = model_kwargs.get('cond_dim', 4)
 
     @classmethod
-    def gw_params_to_vae_labels(cls, mass_1, mass_2, chi_1, chi_2, lambda_1=0., lambda_2=0.):
+    def gw_params_to_vae_labels(cls, mass_1, mass_2, chi_1, chi_2, lambda_1=None, lambda_2=None):
         mc = bilby.gw.conversion.component_masses_to_chirp_mass(mass_1, mass_2)
         q = mass_2 / mass_1
         chi_sym = 0.5 * (chi_1 + chi_2)
         chi_asym = 0.5 * (chi_1 - chi_2)
-        lambda_sym = 0.5 * (lambda_1 + lambda_2)
-        lambda_asym = 0.5 * (lambda_1 - lambda_2)
-        labels = [np.log(mc), q, chi_sym, chi_asym, lambda_sym, lambda_asym]
+        if lambda_1 is not None and lambda_2 is not None:
+            lambda_sym = 0.5 * (lambda_1 + lambda_2)
+            lambda_asym = 0.5 * (lambda_1 - lambda_2)
+            labels = [np.log(mc), q, chi_sym, chi_asym, lambda_sym, lambda_asym]
+        else:
+            labels = [np.log(mc), q, chi_sym, chi_asym]
         return labels
     
     @classmethod
@@ -251,7 +255,8 @@ class PhaseModificationAnalysis:
         if z_abs == 0.:
             return np.zeros_like(freqs)
         z = torch.tensor([z_1/z_abs, z_2/z_abs], device=self.device).view(1, -1)
-        l = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2)
+        l = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2)
+        #l = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2)
         l = torch.tensor(l, device=self.device).view(1, -1)
         geom_freqs = freqs * (mass_1 + mass_2) * MSUN_S
         geom_freqs_cutoff = 10**self.model_loggeom_freqs[-1]

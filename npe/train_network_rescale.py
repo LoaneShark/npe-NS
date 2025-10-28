@@ -44,9 +44,9 @@ def get_cli():
     parser.add_argument("--data-dim", type=int, default=640,
                         help="Set dimensionality of dephasing frequency grid (Default: 640).")
     parser.add_argument("--num-epochs-shape", type=int, default=50,
-                        help="Number of epochs to use (each) for training the scale and shape functions.")
+                        help="Number of epochs used for training the primary network.")
     parser.add_argument("--num-epochs-scale", type=int, default=50,
-                        help="Number of epochs to use (each) for training the scale and shape functions.")
+                        help="Number of epochs to used for training the secondary network.")
     parser.add_argument("--num-epochs-rescale", type=int, default=50,
                         help="Number of epochs to use for rescaling the secondary network.")
     parser.add_argument("--include-tidal-params", action=argparse.BooleanOptionalAction, default=False, required=False,

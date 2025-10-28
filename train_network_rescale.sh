@@ -18,8 +18,9 @@ NUM_EPOCHS=${6:-50}
 #BASE_NETWORK_NAME="npe-${RUN_TYPE}_100-epochs"
 #BASE_NETWORK_NAME="${NETWORK_NAME}"
 #BASE_NETWORK_NAME="npe-NS-5PN_100-epochs"
-BASE_NETWORK_NAME="npe-NS-5PN_200-epochs"
+#BASE_NETWORK_NAME="npe-NS-5PN_200-epochs"
 #BASE_NETWORK_NAME="npe-NS-5PN_400-epochs"
+BASE_NETWORK_NAME="npe-NS_100-epochs"
 
 #EXTRA_ARGS="--include-tidal --include-tidal-data --data-dim 640"
 #EXTRA_ARGS="--include-tidal --include-tidal-data --data-dim 640 --num-epochs $NUM_EPOCHS"
