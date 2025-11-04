@@ -78,8 +78,11 @@ class PhasingDataset(torchDataset):
         if n_params >= 6:
             ls = 0.5 * (l1 + l2)
             la = 0.5 * (l1 - l2)
+            lt = lambda_1_lambda_2_to_lambda_tilde(l1, l2)
+            dlt = lambda_1_lambda_2_to_delta_lambda_tilde(l1, l2)
             # return np.asarray([np.log(mc), np.log(0.25/eta-1), chis, chia]).T
-            return np.asarray([np.log(mc), q, chis, chia, ls, la]).T
+            #return np.asarray([np.log(mc), q, chis, chia, ls, la]).T
+            return np.asarray([np.log(mc), q, chis, chia, lt, dlt]).T
         else:
             # return np.asarray([np.log(mc), np.log(0.25/eta-1), chis, chia]).T
             return np.asarray([np.log(mc), q, chis, chia]).T
@@ -141,7 +144,28 @@ def total_mass_and_mass_ratio_to_component_masses(mass_ratio, total_mass):
 def symmetric_mass_ratio_to_mass_ratio(symmetric_mass_ratio):
     temp = (1 / symmetric_mass_ratio / 2 - 1)
     return temp - (temp ** 2 - 1) ** 0.5
-    
+
+# See: https://arxiv.org/pdf/1402.5156.pdf.
+def lambda_1_lambda_2_to_lambda_tilde(lambda_1, lambda_2, mass_1, mass_2):
+    symmetric_mass_ratio = component_masses_to_symmetric_mass_ratio(mass_1, mass_2)
+    lambda_plus = lambda_1 + lambda_2
+    lambda_minus = lambda_1 - lambda_2
+    lambda_tilde = 8 / 13 * (
+        (1 + 7 * symmetric_mass_ratio - 31 * symmetric_mass_ratio**2) * lambda_plus +
+        (1 - 4 * symmetric_mass_ratio)**0.5 * (1 + 9 * symmetric_mass_ratio - 11 * symmetric_mass_ratio**2) * lambda_minus)
+
+    return lambda_tilde
+
+# See: https://arxiv.org/pdf/1402.5156.pdf.
+def lambda_1_lambda_2_to_delta_lambda_tilde(lambda_1, lambda_2, mass_1, mass_2):
+    symmetric_mass_ratio = component_masses_to_symmetric_mass_ratio(mass_1, mass_2)
+    lambda_plus = lambda_1 + lambda_2
+    lambda_minus = lambda_1 - lambda_2
+    delta_lambda_tilde = 1 / 2 * (
+        (1 - 4 * symmetric_mass_ratio) ** 0.5 * (1 - 13272 / 1319 * symmetric_mass_ratio + 8944 / 1319 * symmetric_mass_ratio**2) *
+        lambda_plus + (1 - 15910 / 1319 * symmetric_mass_ratio + 32850 / 1319 * symmetric_mass_ratio ** 2 +
+                       3380 / 1319 * symmetric_mass_ratio ** 3) * lambda_minus)
+    return delta_lambda_tilde
 
 
 class DatasetManager(object):

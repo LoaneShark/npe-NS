@@ -281,8 +281,11 @@ def _generate_meta_data_chunks(
     #print(pn_coeffs_v)
 
     gamma_bar_bound = _get_gamma_bar_bound(b, pn_coeffs_v, v_min, v_max)
+    # FIXME: This seems incorrect for any n_ppe other than 1
     dpsi_bar_bounds = [_get_dpsi_bar_bound(b+i, pn_coeffs_v, v_min, v_max, gamma_bar_bound) \
                         for i in range(2, n_ppe)]
+    #dpsi_bar_bounds = [_get_dpsi_bar_bound(b+i, pn_coeffs_v, v_min, v_max, gamma_bar_bound) \
+    #                    for i in range(2, 2*n_ppe+2, 2)]
     dpsi_bar_bounds = np.asarray(dpsi_bar_bounds).reshape(-1,num_samples).T
     ppe_bounds = np.concatenate([gamma_bar_bound[:, None], dpsi_bar_bounds], axis=-1)
 
