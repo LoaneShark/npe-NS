@@ -45,9 +45,9 @@ def get_cli():
     parser.add_argument("--data-dim", type=int, default=640,
                         help="Number of frequency points used (dimensionality of input/output layer).")
     parser.add_argument("--include-tidal-params", action=argparse.BooleanOptionalAction, default=False, required=False,
-                        help="Include tidal deformation terms in the parameter space.")
+                        help="Include tidal deformation terms in the condition parameter space.")
     parser.add_argument("--include-tidal-params-full", action=argparse.BooleanOptionalAction, default=False, required=False,
-                        help="Include tidal and spin induced deformation terms in the parameter space.")
+                        help="Include tidal and spin induced deformation terms in the condition parameter space.")
     parser.add_argument("--include-tidal-data", action=argparse.BooleanOptionalAction, default=False, required=False,
                         help="Include tidal deformation waveform data, up to 5PN.")
     parser.add_argument("--include-tidal-data-2p5and4", action=argparse.BooleanOptionalAction, default=None, required=False,
@@ -55,7 +55,9 @@ def get_cli():
     parser.add_argument("--rescale-2p5and4", action=argparse.BooleanOptionalAction, default=None, required=False,
                         help="Whether or not to suppress latent space support at 2.5PN and 4PN orders.")
     parser.add_argument("--penalize-highPN", action=argparse.BooleanOptionalAction, default=None, required=False,
-                        help="Penalize latent space from learning high-PN-like dephasing functions in the non-PN region.")
+                        help="Penalize latent space from learning high-PN-like dephasing functions.")
+    parser.add_argument("--penalize-nonPN", action=argparse.BooleanOptionalAction, default=None, required=False,
+                        help="Penalize latent space from learning PN-like dephasing functions in the non-PN region of latent space.")
     parser.add_argument("--train-recon-phase", action=argparse.BooleanOptionalAction, default=None, required=False,
                         help="Additional training phase including recon error, to facilitate encoder-decoder latent space parity.")
     parser.add_argument("--num-epochs-shape", type=int, default=50,
@@ -64,9 +66,13 @@ def get_cli():
                         help="Number of epochs to use for training the secondary network.")
     parser.add_argument("--num-epochs-recon", type=int, default=50,
                         help="Number of epochs to use for training the recon phase.")
+    parser.add_argument("--num-epochs-highPN", type=int, default=0,
+                        help="Number of epochs (at the end) of the shape train phase to use for penalizing high PN-like behavior in the latent space.")
+    parser.add_argument("--num-epochs-nonPN", type=int, default=0,
+                        help="Number of epochs (at the end) of the shape train phase to use for penalizing PN-like behavior in the non-PN region of latent space.")
     parser.add_argument("--freqs-using-mc", action='store_true', default=False, 
                         help="Frequency in natural units defined with chirp mass instead of total mass.")
-    
+    # set individual training parameters
     parser.add_argument("--train-lr", type=float, default=1e-4,
                         help="Base learning rate to use for training.")
     parser.add_argument("--train-lr-shape", type=float, default=None,
@@ -100,13 +106,21 @@ def get_cli():
     parser.add_argument("--train-kl-coeff-recon", type=float, default=None,
                         help="Coefficient to weight KL divergence term in loss function relative to reconstruction error term. Overrides train-kl-coeff if set.")
     parser.add_argument("--train-highPN-coeff", type=float, default=0.,
-                        help="Coefficient to weight penalization of highPN behavior in latent space.")
+                        help="Coefficient to weight penalization of high-PN behavior in latent space.")
     parser.add_argument("--train-highPN-coeff-shape", type=float, default=None,
-                        help="Coefficient to weight penalization of highPN behavior in latent space. Overrides train-highPN-coeff if set.")
+                        help="Coefficient to weight penalization of high-PN behavior in latent space. Overrides train-highPN-coeff if set.")
     parser.add_argument("--train-highPN-coeff-scale", type=float, default=None,
-                        help="Coefficient to weight penalization of highPN behavior in latent space. Overrides train-highPN-coeff if set.")
+                        help="Coefficient to weight penalization of high-PN behavior in latent space. Overrides train-highPN-coeff if set.")
     parser.add_argument("--train-highPN-coeff-recon", type=float, default=None,
-                        help="Coefficient to weight penalization of highPN behavior in latent space. Overrides train-highPN-coeff if set.")
+                        help="Coefficient to weight penalization of high-PN behavior in latent space. Overrides train-highPN-coeff if set.")
+    parser.add_argument("--train-nonPN-coeff", type=float, default=0.,
+                        help="Coefficient to weight penalization of PN-like behavior in non-PN regions of latent space.")
+    parser.add_argument("--train-nonPN-coeff-shape", type=float, default=None,
+                        help="Coefficient to weight penalization of PN-like behavior in non-PN latent space. Overrides train-highPN-coeff if set.")
+    parser.add_argument("--train-nonPN-coeff-scale", type=float, default=None,
+                        help="Coefficient to weight penalization of non-PN behavior in non-PN latent space. Overrides train-highPN-coeff if set.")
+    parser.add_argument("--train-nonPN-coeff-recon", type=float, default=None,
+                        help="Coefficient to weight penalization of non-PN behavior in non-PN latent space. Overrides train-highPN-coeff if set.")
     
     args = parser.parse_args()
     return args
@@ -367,16 +381,16 @@ def get_highPN_loss_with_scale(v_recon, l):
     loss_highPN_arr = []
     for k in range(0, 7):
         # Get high-PN ppE-like modifications
-        print('k: ', k)
+        #print('k: ', k)
         coeff_bound = _get_coeff_bound(np.array([k]), v_coeffs, v_min, v_max)
         v_highPN_k = coeff_bound * v ** (k)
-        print('v_highPN_k: ', v_highPN_k.shape)
+        #print('v_highPN_k: ', v_highPN_k.shape)
         loss_highPN_arr.append(F.mse_loss(v_highPN_k, v_recon))
         loss_highPN_arr.append(F.mse_loss(-v_highPN_k, v_recon))
 
     # Sum over k: MSE of v_recon and v_highPN_k
     loss_highPN = sum(loss_highPN_arr)
-    print('loss_highPN: ', loss_highPN)
+    #print('loss_highPN: ', loss_highPN)
     return loss_highPN
 
 def get_highPN_loss(v_recon):
@@ -447,16 +461,198 @@ def get_highPN_loss(v_recon):
     # Sum over k: MSE of v_recon and v_highPN_k
     #print(loss_highPN_arr[0].shape)
     #print(loss_highPN_arr)
-    loss_highPN = 1. / sum(loss_highPN_arr)
+    #loss_highPN = 1. / sum(loss_highPN_arr)
+    #loss_highPN = sum(1. / loss_highPN_arr)
     #loss_highPN = sum(loss_highPN_arr)
     #print('loss_highPN: ', loss_highPN)
+
+    loss_highPN_vals = 1. / torch.tensor(loss_highPN_arr)
+    loss_highPN = torch.sum(loss_highPN_vals)
+
     return loss_highPN
+
+def get_nonPN_loss(v_recon):
+    if v_recon.shape[0] <= 0:
+        return torch.tensor(0.0)
+    else:
+        norm_fac = 1. / v_recon.shape[0]
+
+    # By default, assume 10Hz detector minimum and IMRPhenom inspiral cutoff maximum frequency bounds
+    # TODO: Avoid hardcoding all of these values (incl. frequency grid size and spacing)
+    ref_min = 4e-5
+    #ref_min = _convert_f_to_fgeom(10, l.T[0] + l.T[1])
+    ref_max = 0.018
+    #v_min = (np.pi * ref_min) ** (1/3)
+    #v_max = (np.pi * ref_max) ** (1/3)
+    num_f = v_recon.shape[2]
+    #freqs = np.linspace(ref_min, ref_max, num_f)
+    freqs = np.logspace(np.log10(ref_min), np.log10(ref_max), num_f)
+    v_0 = (np.pi * freqs) ** (1/3)
+
+    shape1, scale1 = get_shape_and_scale(torch.abs(v_recon))
+
+    coeff_bound = 1.
+    signs = [1.]
+    #loss_nonPN_arr = []
+    k_min = -14
+    #k_max = 6
+    k_max = 0
+    k_num = k_min - k_max - 1
+    loss_nonPN_arr = []
+    #loss_nonPN_vals = torch.zeros(size=(v_recon.shape[0], 1, k_num))
+    #for k in range(-14, 6):
+    for k_idx, k in enumerate(range(k_min, k_max)):
+        for s in signs:
+            v_nonPN_k = torch.tensor(s * coeff_bound * v_0 ** k)
+            v_nonPN = v_nonPN_k.unsqueeze(0).repeat(v_recon.shape[0], 1)
+            v_nonPN.resize(v_recon.shape[0], 1, num_f)
+
+            shape2, scale2 = get_shape_and_scale(v_nonPN)
+            shape2 = shape2.reshape(v_recon.shape[0], 1, num_f)
+            
+            v_loss_nonPN = get_loss_shape(shape1, shape2)
+            #print('shape1: ', shape1.shape)
+            #print('shape2: ', shape2.shape)
+            #print('v_loss_nonPN.shape: ', v_loss_nonPN.shape)
+            #print('v_loss_nonPN: ', v_loss_nonPN)
+            
+            loss_nonPN_arr.append(v_loss_nonPN)
+
+    loss_nonPN_vals = torch.tensor(loss_nonPN_arr)
+    #print('loss_nonPN_vals.shape: ', loss_nonPN_vals.shape)
+    #print('loss_nonPN_vals: ', loss_nonPN_vals)
+    #loss_nonPN[v_is_nonPN] = loss_nonPN[v_is_nonPN]
+    #loss_nonPN_vals[v_is_nonPN] = 1. / loss_nonPN_vals[v_is_nonPN]
+    #loss_nonPN_vals[~v_is_nonPN] = 0.0
+    loss_nonPN_vals = 1. / loss_nonPN_vals
+    #loss_nonPN = 1. / sum(loss_nonPN_arr)
+    loss_nonPN = norm_fac * torch.sum(loss_nonPN_vals)
+    #print('loss_nonPN: ', loss_nonPN)
+    return loss_nonPN
+
+def check_nonPN_region(model, l, v_recon, mu, logvar):
+    # By default, assume 10Hz detector minimum and IMRPhenom inspiral cutoff maximum frequency bounds
+    # TODO: Avoid hardcoding all of these values (incl. frequency grid size and spacing)
+    ref_min = 4e-5
+    #ref_min = _convert_f_to_fgeom(10, l.T[0] + l.T[1])
+    ref_max = 0.018
+    #v_min = (np.pi * ref_min) ** (1/3)
+    #v_max = (np.pi * ref_max) ** (1/3)
+    num_f = v_recon.shape[2]
+    #freqs = np.linspace(ref_min, ref_max, num_f)
+    freqs = np.logspace(np.log10(ref_min), np.log10(ref_max), num_f)
+    v_0 = torch.tensor((np.pi * freqs) ** (1/3))
+    v_0 = v_0.unsqueeze(0).repeat(v_recon.shape[0], 1)
+    v_0.resize(v_recon.shape[0], 1, num_f)
+
+    #print('v_recon.shape: ', v_recon.shape)
+    #print('v_0.shape: ', v_recon.shape)
+    #print('l.shape: ', l.shape)
+    #print('mu.shape: ', mu.shape)
+    #print('logvar.shape: ', logvar.shape)
+
+    v_m1_pos = 1. * v_0 ** (-1)
+    v_m1_pos.resize(v_recon.shape[0], 1, num_f)
+    #print('v_m1_pos.shape: ', v_m1_pos.shape)
+    mu_m1p, logvar_m1p = model.encoder(v_m1_pos, l)
+
+    v_m1_neg = -1. * v_0 ** (-1)
+    v_m1_neg.resize(v_recon.shape[0], 1, num_f)
+    mu_m1n, logvar_m1n = model.encoder(v_m1_neg, l)
+
+    v_m13_pos = 1. * v_0 ** (-13)
+    v_m13_pos.resize(v_recon.shape[0], 1, num_f)
+    mu_m13p, logvar_m13p = model.encoder(v_m13_pos, l)
+
+    v_m13_neg = -1. * v_0 ** (-13)
+    v_m13_neg.resize(v_recon.shape[0], 1, num_f)
+    mu_m13n, logvar_m13n = model.encoder(v_m13_neg, l)
+    
+    #is_nonPN_v = torch.zeros_like(mu[:,:,0])
+    #is_nonPN_v = torch.zeros(size=mu.shape[:-1])
+    is_nonPN_v = torch.full(size=mu.shape[:-1], fill_value=False)
+
+    for mu_min, logvar_min, mu_max, logvar_max in [(mu_m1p, logvar_m1p, mu_m13n, logvar_m13n), 
+                                                   (mu_m13p, logvar_m13p, mu_m1n, logvar_m1n)]:
+        #theta1 = torch.arctan(torch.sqrt(mu_min[:,0]**2 + mu_min[:,1]**2))
+        theta1 = torch.arcsin(mu_min[:,1] / torch.sqrt(mu_min[:,0]**2 + mu_min[:,1]**2))
+        dtheta1 = torch.arctan(torch.sqrt((10.**logvar_min[:,0])**2 + (10.**logvar_min[:,1])**2))
+        theta1_min = (theta1 - dtheta1) % (2*np.pi)
+        theta1_max = (theta1 + dtheta1) % (2*np.pi)
+        #theta2 = torch.arctan(torch.sqrt(mu_max[:,0]**2 + mu_max[:,1]**2))
+        theta2 = torch.arcsin(mu_max[:,1] / torch.sqrt(mu_max[:,0]**2 + mu_max[:,1]**2))
+        dtheta2 = torch.arctan(torch.sqrt((10.**logvar_max[:,0])**2 + (10.**logvar_max[:,1])**2))
+        theta2_min = (theta2 - dtheta2) % (2*np.pi)
+        theta2_max = (theta2 + dtheta2) % (2*np.pi)
+
+        # assume nonPN region is < pi / 2
+        #zero_cross = (torch.sign(mu_min[:,:,0]) < 0 & torch.sign(mu_min[:,:,1]) < 0 \
+        #                   & torch.sign(mu_max[:,:,0]) > 0 & torch.sign(mu_max[:,:,1]) > 0)
+        # assume nonPN region is < pi / 2
+        zero_cross = ((theta1_min > theta2_max % (2*np.pi)) \
+                        & (((theta1_min + np.pi/2.) % (2*np.pi)) < ((theta2_max + np.pi/2.) % (2*np.pi))) \
+                        & (((theta1_min - np.pi/2.) % (2*np.pi)) < ((theta2_max - np.pi/2.) % (2*np.pi))) \
+                        & (((theta1_min + np.pi)    % (2*np.pi)) < ((theta2_max + np.pi)    % (2*np.pi)))) | \
+                     ((theta1_max < theta2_min % (2*np.pi)) \
+                        & (((theta1_max + np.pi/2.) % (2*np.pi)) > ((theta2_min + np.pi/2.) % (2*np.pi))) \
+                        & (((theta1_max - np.pi/2.) % (2*np.pi)) > ((theta2_min - np.pi/2.) % (2*np.pi))) \
+                        & (((theta1_max + np.pi)    % (2*np.pi)) > ((theta2_min + np.pi)    % (2*np.pi))))
+
+        # theta1 < theta2
+        sign_mask = ((theta1_max < theta2_min) & ~zero_cross) | ((theta1_min > theta2_max) & zero_cross)
+
+        theta_ref_min = theta1_max
+        theta_ref_min[~sign_mask] = theta2_max[~sign_mask]
+        theta_ref_max = theta2_min
+        theta_ref_max[~sign_mask] = theta1_min[~sign_mask]
+
+        z_v = torch.sqrt(mu[:,0]**2 + mu[:,1]**2)
+        dz_v = torch.sqrt((10.**logvar[:,0])**2 + (10.**logvar[:,1])**2)
+        #print('z_v.shape: ', z_v.shape)
+        #print('z_v: ', z_v)
+        z_nonGR = z_v > dz_v
+        #z_nonGR = z_v > 0
+        #theta_v = torch.full_like(z_v, False, dtype=bool)
+        theta_v = torch.zeros_like(z_v)
+        theta_v[z_nonGR] = (torch.arcsin(mu[:,1] / z_v)[z_nonGR]) % (2*np.pi)
+        #print('theta_v.shape: ', theta_v.shape)
+        #print('theta_v: ', theta_v)
+        dtheta_v = torch.zeros_like(z_v)
+        dtheta_v[z_nonGR] = torch.arctan(dz_v / z_v)[z_nonGR]
+        #print('dtheta_v.shape: ', dtheta_v.shape)
+        #print('dtheta_v: ', dtheta_v)
+
+        theta_v_min = (theta_v - dtheta_v) % (2*np.pi)
+        theta_v_max = (theta_v + dtheta_v) % (2*np.pi)
+        #theta_v_min = theta_v
+        #theta_v_max = theta_v
+
+        theta_nonPN_mask = z_nonGR & \
+                            (~zero_cross & (theta_v_max < theta_ref_max) & (theta_v_min > theta_ref_min) | \
+                            (zero_cross & (((theta_v_max + np.pi) % (2*np.pi)) < ((theta_ref_max + np.pi) % (2*np.pi))) & \
+                                          (((theta_v_min + np.pi) % (2*np.pi)) > ((theta_ref_min + np.pi) % (2*np.pi)))))
+        
+        is_nonPN_v[theta_nonPN_mask] = True
+
+    #print('mu.shape: ', mu.shape)
+    #print('mu: ', mu)
+    #print('logvar.shape: ', logvar.shape)
+    #print('logvar: ', logvar)
+
+    #print('is_nonPN_v.shape: ', is_nonPN_v.shape)
+    #print('any is_nonPN_v: ', torch.any(is_nonPN_v))
+    #print('is_nonPN_v: ', is_nonPN_v)
+
+    #raise ValueError
+
+    return is_nonPN_v
+
 
 def vae_loss_fn(model: VAE , v, l, t, *args, 
                 kl_coeff=1., 
                 shape_coeff=1., scale_coeff=1., 
                 recon_coeff=1., recon_scale_coeff=1.,
-                nonPN_coeff=1.,
+                nonPN_coeff=1., highPN_coeff=1.,
                 with_mu=True, recon_use_mse=False,
                 **kwargs):
     v, l, t = align_data_format_with_model(model, v, l, t)
@@ -481,24 +677,42 @@ def vae_loss_fn(model: VAE , v, l, t, *args,
         loss_shape_recon, loss_scale_recon = get_loss_recon(v, v_recon)
         loss_recon = recon_coeff * loss_shape_recon + recon_scale_coeff * loss_scale_recon
     
-    if nonPN_coeff != 0.:
+    # Penalize high-order PN-like dephasing behavior across latent space
+    if highPN_coeff != 0.:
         #loss_highPN = get_highPN_loss_with_scale(v_recon, l)
-        loss_highPN = get_highPN_loss(v_recon_var)
-        loss_nonPN = nonPN_coeff * loss_highPN
+        loss_highPN = highPN_coeff * get_highPN_loss(v_recon)
     else:
-        loss_nonPN = 0.
+        loss_highPN = torch.tensor(0.)
+
+    # Penalize PN-like dephasing behavior in the non-PN region of latent space only
+    if nonPN_coeff != 0.:
+        v_is_nonPN = check_nonPN_region(model, l, v_recon, mu, logvar)
+        loss_nonPN = nonPN_coeff * get_nonPN_loss(v_recon[v_is_nonPN])
+    else:
+        loss_nonPN = torch.tensor(0.)
+
+    #print('loss_kld: ', loss_kld.shape)
+    #print('loss_kld: ', loss_kld)
+    #print('loss_var: ', loss_var.shape)
+    #print('loss_var: ', loss_var)
+    #print('loss_recon: ', loss_recon.shape)
+    #print('loss_recon: ', loss_recon)
+    #print('loss_highPN: ', loss_highPN.shape)
+    #print('loss_highPN: ', loss_highPN)
+    #print('loss_nonPN: ', loss_nonPN.shape)
+    #print('loss_nonPN: ', loss_nonPN)
         
-    loss = loss_kld + loss_var + loss_recon + loss_nonPN
+    loss = loss_kld + loss_var + loss_recon + loss_highPN + loss_nonPN
     return loss
 
 # TODO: Modify vae loss function to use effective cycles as reconstruction loss
 def vae_loss_fn_EC(model, v, l, t, *args, 
-                kl_coeff=1., 
-                shape_coeff=1., scale_coeff=1., 
-                recon_coeff=1., recon_scale_coeff=1.,
-                with_mu=True, recon_use_mse=False,
-                recon_use_effective_cycles=False,
-                **kwargs):
+                   kl_coeff=1., 
+                   shape_coeff=1., scale_coeff=1., 
+                   recon_coeff=1., recon_scale_coeff=1.,
+                   with_mu=True, recon_use_mse=False,
+                   recon_use_effective_cycles=False,
+                   **kwargs):
     v, l, t = align_data_format_with_model(model, v, l, t)
     
     # Run encoder to get mu and variance of latent space
@@ -551,7 +765,9 @@ def vae_diagnosis_fn(model, v, l, t, *args, with_mu=True, **kwargs):
     loss_shape, loss_scale = get_loss_recon_var(v, v_recon)
     loss_shape_recon, _ = get_loss_recon(v, v_recon)
     loss_recon = F.mse_loss(v, v_recon)
-    loss_nonPN = get_highPN_loss(v_recon)
+    loss_highPN = get_highPN_loss(v_recon)
+    v_is_nonPN = check_nonPN_region(model, l, v_recon, mu, logvar)
+    loss_nonPN = get_nonPN_loss(v_recon[v_is_nonPN])
     
     metrics = dict(
         kl_div=loss_kld,
@@ -559,7 +775,8 @@ def vae_diagnosis_fn(model, v, l, t, *args, with_mu=True, **kwargs):
         err_shape_rescaled=loss_shape_recon,
         err_shape=loss_shape,
         err_scale=loss_scale,
-        err_highPN=loss_nonPN,
+        err_highPN=loss_highPN,
+        err_nonPN=loss_nonPN,
     )
     distrib = dict(
         values=v,
@@ -590,6 +807,7 @@ def main():
     args.resume_title = args.run_title
     args.resume_epochs = 0
     args.add_epochs = args.num_epochs_shape
+    args.nonPN_epochs = args.num_epochs_nonPN if args.penalize_nonPN else 0.
     args.epochs_per_latent_plot = [(10, 1), (None, 10)]
     args.epochs_per_checkpoint = min(50, args.num_epochs_shape, args.num_epochs_scale)
     args.optimizer_override = True
@@ -606,11 +824,14 @@ def main():
     args.gamma = args.train_gamma_shape if args.train_gamma_shape is not None else args.train_gamma
     args.kl_coeff = args.train_kl_coeff_shape if args.train_kl_coeff_shape is not None else args.train_kl_coeff
     args.highPN_coeff = (args.train_highPN_coeff_shape if args.train_highPN_coeff_shape is not None else args.train_highPN_coeff) if args.penalize_highPN else 0.
+    args.nonPN_coeff = (args.train_nonPN_coeff_shape if args.train_nonPN_coeff_shape is not None else args.train_nonPN_coeff) if args.penalize_nonPN else 0.
     args.loss_kwargs = dict(
         kl_coeff=args.kl_coeff, 
         shape_coeff=1., scale_coeff=0., 
         recon_coeff=0., recon_scale_coeff=0.,
-        nonPN_coeff=args.highPN_coeff,
+        #highPN_coeff=args.highPN_coeff,
+        highPN_coeff=[(max(1, args.num_epochs_shape - args.num_epochs_highPN), 0.), (None, args.highPN_coeff)],
+        nonPN_coeff=[(max(1, args.num_epochs_shape - args.num_epochs_nonPN), 0.), (None, args.nonPN_coeff)],
         with_mu=False, recon_use_mse=False, 
     )
     args.diagnosis_kwargs = dict(with_mu=False)
@@ -764,11 +985,13 @@ def main():
     args.wd = args.train_wd_scale if args.train_wd_scale is not None else args.train_wd
     args.gamma = args.train_gamma_scale if args.train_gamma_scale is not None else args.train_gamma
     args.kl_coeff = args.train_kl_coeff_scale if args.train_kl_coeff_scale is not None else 0.
-    args.nonPN_coeff = args.train_highPN_coeff_scale if args.train_highPN_coeff_scale is not None else 0.
+    args.highPN_coeff = args.train_highPN_coeff_scale if args.train_highPN_coeff_scale is not None else 0.
+    args.nonPN_coeff = args.train_nonPN_coeff_scale if args.train_nonPN_coeff_scale is not None else 0.
     args.loss_kwargs = dict(
         kl_coeff=args.kl_coeff, 
         shape_coeff=0., scale_coeff=0., 
         recon_coeff=0., recon_scale_coeff=1.,
+        highPN_coeff=args.highPN_coeff,
         nonPN_coeff=args.nonPN_coeff,
         with_mu=False, recon_use_mse=False, 
     )
@@ -815,11 +1038,13 @@ def main():
         args.wd = args.train_wd_recon if args.train_wd_recon is not None else args.train_wd
         args.gamma = args.train_gamma_recon if args.train_gamma_recon is not None else args.train_gamma
         args.kl_coeff = args.train_kl_coeff_recon if args.train_kl_coeff_recon is not None else 0.
-        args.nonPN_coeff = args.train_highPN_coeff_recon if args.train_highPN_coeff_recon is not None else args.train_highPN_coeff
+        args.highPN_coeff = (args.train_highPN_coeff_recon if args.train_highPN_coeff_recon is not None else args.train_highPN_coeff) if args.penalize_highPN else 0.
+        args.nonPN_coeff = (args.train_nonPN_coeff_recon if args.train_nonPN_coeff_recon is not None else args.train_nonPN_coeff) if args.penalize_nonPN else 0.
         args.loss_kwargs = dict(
             kl_coeff=args.kl_coeff, 
             shape_coeff=0.5, scale_coeff=0., 
             recon_coeff=1., recon_scale_coeff=0.5,
+            highPN_coeff=args.highPN_coeff,
             nonPN_coeff=args.nonPN_coeff,
             with_mu=False, recon_use_mse=False, 
         )

@@ -84,6 +84,7 @@ def train(args):
     include_tidal_data_2p5and4 = args.include_tidal_data_2p5and4
     rescale_2p5and4 = args.rescale_2p5and4
     penalize_highPN = args.penalize_highPN
+    penalize_nonPN = args.penalize_nonPN
 
     npoints_for_latent_plot = args.npoints_for_latent_plot
     npoints_for_generation = args.npoints_for_generation

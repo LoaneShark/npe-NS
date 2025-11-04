@@ -12,7 +12,8 @@ dataset_seed=${2:-1234}
 training_seed=${3:--1}
 num_epochs_shape=${4:-50}
 num_epochs_scale=${5:-50}
-num_epochs_recon=${5:-50}
+num_epochs_recon=${6:-50}
+num_epochs_nonPN=${7:-25}
 
 N_FREQS=640
 #N_FREQS=1280
@@ -30,17 +31,19 @@ N_FREQS=640
 #TIDAL_TERMS="--no-include-tidal-params --no-include-tidal-data --penalize-highPN --train-recon-phase"
 #TIDAL_TERMS="--include-tidal-params --no-include-tidal-data --no-penalize-highPN"
 #TIDAL_TERMS="--no-include-tidal-params --penalize-highPN"
-TIDAL_TERMS="--no-include-tidal-params --no-include-tidal-data --no-penalize-highPN --no-train-recon-phase"
+#TIDAL_TERMS="--no-include-tidal-params --no-include-tidal-data --no-penalize-highPN --no-train-recon-phase"
+#TIDAL_TERMS="--no-include-tidal-params --no-include-tidal-data --penalize-nonPN --no-train-recon-phase"
+TIDAL_TERMS="--no-include-tidal-params --no-include-tidal-data --no-penalize-nonPN --no-train-recon-phase"
 
 #DATASET=dataset_${content}
 #DATASET=dataset_${content}_test
 #DATASET=dataset_${content}_3.5PN
 #DATASET=dataset_${content}_5PN
 #DATASET=dataset_${content}_5PN_v2
-#DATASET=dataset_${content}_5PN_test
+DATASET=dataset_${content}_5PN_test
 #DATASET=dataset_${content}_5PN_test8
 #DATASET=dataset_${content}_5PN_tidal_full
-DATASET=dataset_${content}_mc
+#DATASET=dataset_${content}_mc
 
 #TITLE=npe-$content
 #TITLE=npe-$content-nohighPN-test-3
@@ -79,8 +82,17 @@ DATASET=dataset_${content}_mc
 #TITLE=npe-$content-new-nohighPN-m1-longscale-2
 #TITLE=npe-$content-new-nohighPN-m1e4
 #TITLE=npe-$content-new-nohighPN-m1e4-longscale-2
-TITLE=npe-$content-mc
+#TITLE=npe-$content-mc
 #TITLE=npe-$content-mc-test
+#TITLE=npe-$content-nonPN
+#TITLE=npe-$content-nonPN-p1e1
+#TITLE=npe-$content-nonPN-baseline
+#TITLE=npe-$content-nonPN-test-2
+#TITLE=npe-$content-nonPN-test-5
+#TITLE=npe-$content-nonPN-test-baseline-6
+TITLE=npe-$content-KL-p2-test
+#TITLE=npe-$content-KL-p5e6-test
+#TITLE=npe-$content-baseline-test-6
 
 TRAIN_LR=1e-4
 #TRAIN_LR=5e-4
@@ -91,15 +103,22 @@ TRAIN_WD=1e-4
 TRAIN_GAMMA=0.9
 #TRAIN_GAMMA=0.95
 
-TRAIN_KL_COEFF=1e-6
+#TRAIN_KL_COEFF=1e-6
 #TRAIN_KL_COEFF=1e-7
 #TRAIN_KL_COEFF=1e-8
+#TRAIN_KL_COEFF=5e-6
+TRAIN_KL_COEFF=2
 
 #TRAIN_HIGHPN_COEFF=1.0
-TRAIN_HIGHPN_COEFF=1e-4
+#TRAIN_HIGHPN_COEFF=1e-4
 #TRAIN_HIGHPN_COEFF=-1.0
 #TRAIN_HIGHPN_COEFF=-1e-4
-#TRAIN_HIGHPN_COEFF=0.0
+TRAIN_HIGHPN_COEFF=0.0
+
+#TRAIN_NONPN_COEFF=1.0
+#TRAIN_NONPN_COEFF=1e-2
+#TRAIN_NONPN_COEFF=1e-1
+TRAIN_NONPN_COEFF=0.0
 
 python npe/train_network.py \
   --dataset-rootdir $DATASET \
@@ -112,6 +131,8 @@ python npe/train_network.py \
   --num-epochs-shape $num_epochs_shape \
   --num-epochs-scale $num_epochs_scale \
   --num-epochs-recon $num_epochs_recon \
+  --num-epochs-nonPN $num_epochs_nonPN \
   --train-lr $TRAIN_LR --train-wd $TRAIN_WD \
   --train-gamma $TRAIN_GAMMA --train-kl-coeff $TRAIN_KL_COEFF \
-  --train-highPN-coeff " ${TRAIN_HIGHPN_COEFF}"
+  --train-highPN-coeff " ${TRAIN_HIGHPN_COEFF}" \
+  --train-nonPN-coeff " ${TRAIN_NONPN_COEFF}"
