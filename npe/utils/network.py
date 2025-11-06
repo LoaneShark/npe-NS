@@ -93,18 +93,22 @@ class VAE(nn.Module):
         self.grid_dim = grid_dim
         self.freeze_shape = freeze_shape
         self.freeze_scale = freeze_scale
+        # Primary Encoder
         self.raw_encoder = Encoder(width, depth, 
                                    latent_dim, data_dim, 
                                    cond_dim, use_cond=False,
                                    activation=activation, batchnorm=batchnorm)
+        # Decoder 0
         self.raw_decoder0 = Decoder(width_scale, depth_scale, 
                                     latent_dim, 1,
                                     cond_dim, use_cond=True,
                                     activation=activation, batchnorm=batchnorm)
+        # Decoder 1
         self.raw_decoder1 = Decoder(width, depth, 
                                     latent_dim, grid_dim, 
                                     cond_dim, use_cond=False,
                                     activation=activation, batchnorm=batchnorm)
+        # Decoder 2
         self.raw_decoder2 = Decoder(width, depth, 
                                     latent_dim, grid_dim, 
                                     cond_dim, use_cond=False,
@@ -119,37 +123,65 @@ class VAE(nn.Module):
         
     def encoder(self, x, cond):
         batch_size = x.shape[0]
+        # Normalize input
         x = x / torch.sqrt(torch.mean(x*x, dim=-1, keepdim=True))
         x = x.view(-1, self.raw_encoder.data_dim)
+        # Antisymmetrize input
         x = torch.cat([x, -x], dim=0)
         cond = torch.cat([cond, cond], dim=0)
+        # Pass input through encoder
         mu, logvar = self.raw_encoder(x, cond)
+        # Symmetrize mu
         mu = (mu[:batch_size] - mu[batch_size:]) / 2
+        # Normalize mu
         mu = mu / torch.sqrt(torch.sum(mu*mu, dim=-1, keepdim=True))
+        # Symmetrize logvar
         logvar = (logvar[:batch_size] + logvar[batch_size:]) / 2
         return mu, logvar
-    
+
+    # Returns vectors with the coefficients (x1) and exponents (x2)
+    # of each term in the pseudo-PN expansion
     def grid_decoder(self, z, cond):
         batch_size = z.shape[0]
-        z = torch.cat([z, -z], dim=0)
-        cond = torch.cat([cond, cond], dim=0)
-        x0 = self.raw_decoder0(z, cond)
-        x1 = self.raw_decoder1(z, cond)
-        x2 = self.raw_decoder2(z, cond)
+        # Antisymmetrize z
+        z = torch.cat([z, -z], dim=0)           # z.shape    = [batch_size, latent_dim]
+        cond = torch.cat([cond, cond], dim=0)   # cond.shape = [batch_size, cond_dim]
+        # Pass through decoder0
+        x0 = self.raw_decoder0(z, cond)         # x0.shape = [batch_size, 1]
+        # Pass through decoder1
+        x1 = self.raw_decoder1(z, cond)         # x1.shape = [batch_size, grid_dim]
+        # Pass through decoder2
+        x2 = self.raw_decoder2(z, cond)         # x0.shape = [batch_size, grid_dim]
+        # Return x1 * exp(x0), x2
         x0 = (x0[:batch_size] + x0[batch_size:]) / 2
         x1 = (x1[:batch_size] - x1[batch_size:]) / 2
-        x2 = (x2[:batch_size] + x2[batch_size:]) / 2
-        x1 = torch.exp(x0) * x1
+        x2 = (x2[:batch_size] + x2[batch_size:]) / 2 # x2.shape = [batch_size, grid_dim]
+        x1 = torch.exp(x0) * x1                      # x1.shape = [batch_size, grid_dim]
         return x1, x2
     
-    def decoder(self, z, cond, xin=None):
+    def extended_decoder(self, z, cond, xin=None):
+        # this returns the dephasing (xout) given the inputing freqs (xin)
+        # and the derivative of the dephasing (dext) at the ending freq (for extrapolation)
         batch_size = z.shape[0]
         x1, x2 = self.grid_decoder(z, cond)
         if xin is None:
             xin = torch.linspace(0, 1, self.data_dim, device=x1.device)
             xin = xin.repeat(batch_size, 1)
+        xout_comp = x1[:,None,:] * torch.exp(x2[:,None,:] * xin[:,:,None])
+        xout = torch.sum(xout_comp, dim=-1).view(batch_size, 1, -1)
+        dext = torch.sum(x2 * xout_comp[:,-1,:], dim=-1).view(batch_size, 1)
+        return xout, dext
+    
+    def decoder(self, z, cond, xin=None):
+        batch_size = z.shape[0]
+        # x1 * exp(x0), x2
+        x1, x2 = self.grid_decoder(z, cond)
+        if xin is None:
+            xin = torch.linspace(0, 1, self.data_dim, device=x1.device)
+            xin = xin.repeat(batch_size, 1)    # xin.shape = [batch_size, data_dim]
+        # x1 * exp(x0) * exp(x2 * xin)
         xout = torch.sum(x1[:,None,:] * torch.exp(x2[:,None,:] * xin[:,:,None]), dim=-1)
-        xout = xout.view(batch_size, 1, -1)
+        xout = xout.view(batch_size, 1, -1)    # xout.shape = [batch_size, 1, data_dim]
         return xout
     
     def varier(self, mu, logvar):

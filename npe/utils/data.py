@@ -78,11 +78,11 @@ class PhasingDataset(torchDataset):
         if n_params >= 6:
             ls = 0.5 * (l1 + l2)
             la = 0.5 * (l1 - l2)
-            lt = lambda_1_lambda_2_to_lambda_tilde(l1, l2)
-            dlt = lambda_1_lambda_2_to_delta_lambda_tilde(l1, l2)
+            lt = lambda_1_lambda_2_to_lambda_tilde(l1, l2, m1, m2)
+            dlt = lambda_1_lambda_2_to_delta_lambda_tilde(l1, l2, m1, m2)
             # return np.asarray([np.log(mc), np.log(0.25/eta-1), chis, chia]).T
-            #return np.asarray([np.log(mc), q, chis, chia, ls, la]).T
-            return np.asarray([np.log(mc), q, chis, chia, lt, dlt]).T
+            return np.asarray([np.log(mc), q, chis, chia, ls, la]).T
+            # return np.asarray([np.log(mc), q, chis, chia, lt, dlt]).T
         else:
             # return np.asarray([np.log(mc), np.log(0.25/eta-1), chis, chia]).T
             return np.asarray([np.log(mc), q, chis, chia]).T

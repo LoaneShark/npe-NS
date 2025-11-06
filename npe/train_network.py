@@ -207,7 +207,7 @@ def get_highPN_loss_with_scale(v_recon, l):
     v_max = (np.pi * ref_max) ** (1/3)
     freqs = np.logspace(np.log10(ref_min), np.log10(ref_max), 640)
     v = (np.pi * freqs) ** (1/3)
-    if len(l.T) == 6:
+    if len(l.T) >= 6:
         l1 = l.T[4]
         l2 = l.T[5]
     else:

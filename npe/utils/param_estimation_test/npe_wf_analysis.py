@@ -294,7 +294,10 @@ class PhaseModificationAnalysis:
         #phases = torch.tensor(phases, device=self.device).view(1, 1, -1)
         phases = torch.tensor(phases, dtype=local_dtype, device=self.device).view(1, 1, -1)
 
-        labels = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2)
+        if self.cond_dim == 4:
+            labels = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2)
+        else:
+            labels = self.gw_params_to_vae_labels(mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2)
 
         #labels = torch.tensor(labels, device=self.device).view(1, -1)
         labels = torch.tensor(labels, dtype=local_dtype, device=self.device).view(1, -1)
