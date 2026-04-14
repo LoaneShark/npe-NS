@@ -2,8 +2,10 @@ systype=${1:-"BH"}
 nsample=${2:-100000} # reproduces the paper
 # nsample=1000 # for test runs
 seed=${3:-1234}
-include_tidal=${4:-0}
-include_5PN=${5:-0}
+include_halfPN=${4:-0}
+include_tidal=${5:-0}
+include_5PN=${6:-0}
+include_2PN=${7:-1}
 
 
 # Black Hole parameters
@@ -223,27 +225,29 @@ fi
 
 dataset_folder="dataset_${systype}"
 
-python npe/generate_dataset.py \
-  --b-ppe -1 \
-  --n-ppe 1 \
-  --minus-gr $TIDAL_TERMS $EXTRA_TERMS \
-  --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
-  --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
-  --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
-  --chi2z-min $CHI_MIN_2 --chi2z-max $CHI_MAX_2 \
-  --l1-min $L_MIN_1 --l1-max $L_MAX_1 \
-  --l2-min $L_MIN_2 --l2-max $L_MAX_2 \
-  --cq1-min $CQ_MIN_1 --cq1-max $CQ_MAX_1 \
-  --cq2-min $CQ_MIN_2 --cq2-max $CQ_MAX_2 \
-  --fmin $F_MIN --fmax $F_MAX \
-  --num-freqs $F_NUM \
-  --logspace-freqs \
-  --freq-in-geometric-units \
-  --ppe-ref-min 10 \
-  --num-samples $nsample \
-  --seed $seed \
-  --pool 2 \
-  --output-file $dataset_folder/ppe-minus1.pkl
+if [ "$include_2PN" -eq "1" ]; then
+  python npe/generate_dataset.py \
+    --b-ppe -1 \
+    --n-ppe 1 \
+    --minus-gr $TIDAL_TERMS $EXTRA_TERMS \
+    --m1-min $M_MIN_1 --m1-max $M_MAX_1 \
+    --m2-min $M_MIN_2 --m2-max $M_MAX_2 \
+    --chi1z-min $CHI_MIN_1 --chi1z-max $CHI_MAX_1 \
+    --chi2z-min $CHI_MIN_2 --chi2z-max $CHI_MAX_2 \
+    --l1-min $L_MIN_1 --l1-max $L_MAX_1 \
+    --l2-min $L_MIN_2 --l2-max $L_MAX_2 \
+    --cq1-min $CQ_MIN_1 --cq1-max $CQ_MAX_1 \
+    --cq2-min $CQ_MIN_2 --cq2-max $CQ_MAX_2 \
+    --fmin $F_MIN --fmax $F_MAX \
+    --num-freqs $F_NUM \
+    --logspace-freqs \
+    --freq-in-geometric-units \
+    --ppe-ref-min 10 \
+    --num-samples $nsample \
+    --seed $seed \
+    --pool 2 \
+    --output-file $dataset_folder/ppe-minus1.pkl
+fi
   
 python npe/generate_dataset.py \
   --b-ppe -2 \

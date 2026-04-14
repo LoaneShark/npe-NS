@@ -65,6 +65,7 @@ def train(args):
     lr = args.lr
     wd = args.wd
     gamma = args.gamma
+    epsilon = args.epsilon
     kl_coeff = args.train_kl_coeff
     loss_kwargs = args.loss_kwargs
     diagnosis_kwargs = args.diagnosis_kwargs
@@ -113,7 +114,7 @@ def train(args):
     log_str = "{} Training program started with title '{}'".format(datetime.now().strftime('%H:%M:%S'), run_title)
     print(log_str); sys.stdout.flush()
 
-    run_config = dict(lr=lr, wd=wd, gamma=gamma, kl_coeff=kl_coeff, epochs=epochs_per_checkpoint, loss_kwargs=loss_kwargs, rescale_2p5and4=rescale_2p5and4, model_type=model_type, optimizer_type=optimizer_type, scheduler_type=scheduler_type)
+    run_config = dict(lr=lr, wd=wd, gamma=gamma, kl_coeff=kl_coeff, epsilon=epsilon, epochs=epochs_per_checkpoint, loss_kwargs=loss_kwargs, rescale_2p5and4=rescale_2p5and4, model_type=model_type, optimizer_type=optimizer_type, scheduler_type=scheduler_type)
     log_str = "{} Running with configuration args: {}".format(datetime.now().strftime('%H:%M:%S'), run_config)
     print(log_str); sys.stdout.flush()
 
@@ -218,6 +219,9 @@ def train(args):
 
     for i_epoch in range(resume_epochs, resume_epochs+add_epochs):
 
+        print('Freeze shape: ', model.freeze_shape)
+        print('Freeze scale: ', model.freeze_scale)
+
         current_loss_kwargs = dict()
         for k,v in loss_kwargs.items():
             current_loss_kwargs[k] = get_current_epoch_value(v, i_epoch)
@@ -234,6 +238,7 @@ def train(args):
             lr=scheduler.get_last_lr()[0], 
             weight_decay=optimizer.defaults['weight_decay'],
             batch_size=data_loader_train.batch_size,
+            epsilon=epsilon,
         )
         # hparams.update(agent.loss_fn_kwargs)
         for k, v in agent.loss_fn_kwargs.items():
@@ -297,6 +302,9 @@ def train(args):
             if show_plot: plt.show()
             tb_writer.add_figure('latent/distrib', fig, i_epoch+1)
             fig = agent.report_latent_sample()
+            if show_plot: plt.show()
+            tb_writer.add_figure('latent/sample', fig, i_epoch+1)
+            fig = agent.report_pseudoPN_structure()
             if show_plot: plt.show()
             tb_writer.add_figure('latent/sample', fig, i_epoch+1)
             tb_writer.flush()

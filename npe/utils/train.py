@@ -15,6 +15,7 @@ if utils_dir not in sys.path:
 from utils.loss import (
     mean_squared_error as mse_loss,
     kl_div_diagonal_gaussian_to_standard_gaussian as kl_loss,
+    get_pseudoPN_expansion
 )
 
 
@@ -195,6 +196,13 @@ class VAEEvaluationAgent(object):
         sample = {k: sample[k] for k in self._sample_keys}
         # fig = plot_latent_sample(sample, norm=self.norm)
         fig = plot_latent_sample(sample)
+        return fig
+    
+    def report_pseudoPN_structure(self):
+        num_angles = 3600
+        angles = torch.Tensor(np.linspace(0, 2*np.pi, num_angles, endpoint=False)).reshape(num_angles, 1)
+        leading_PN_order, subleading_PN_order, coefficients = get_pseudoPN_expansion(self.model, num_angles=num_angles)
+        fig = plot_pseudo_PN_expansion(angles, leading_PN_order, subleading_PN_order, coefficients)
         return fig
 
 
@@ -461,6 +469,41 @@ def plot_nonPN_region_2d(axis,
     #axis.fill_between(non_PN_angles_z1_base_sec, non_PN_angles_z2_sec, y2=non_PN_angles_z2_base_sec, color='lightgrey', alpha=0.5)
 
     return axis
+
+def plot_pseudo_PN_expansion(angles, leading_PN_order, subleading_PN_order, coefficient_ratio, plot_coefficient_ratios=True):
+        plt.plot(angles[:].detach().numpy(), leading_PN_order, label=f'Leading Order')
+        plt.plot(angles[:].detach().numpy(), subleading_PN_order, label=f'Subleading Order')
+
+        ylim = plt.ylim()
+
+        #plt.vlines(theory_angles['z_theta'], -50, 50, color='grey', linestyle=':')
+        #plt.vlines((theory_angles['z_theta']+np.pi) % (2*np.pi), -50, 50, color='grey', linestyle=':')
+
+        plt.grid()
+        plt.tight_layout()
+
+        plt.xlabel(r'$\theta$')
+        #plt.ylabel('Pseudo-PN Exponent')
+        plt.ylabel('PN Order')
+        
+        plt.xlim(0, 2*np.pi)
+        plt.ylim(ylim)
+        plt.legend(loc='upper left')
+
+
+        if plot_coefficient_ratios:
+            ax2 = plt.twinx()
+
+            ax2.plot(angles[:].detach().numpy(), coefficient_ratio, label=f'Coefficient Ratio', linestyle='--', color='C2')
+
+            ax2.set_yscale('log')
+            #ax2.set_ylim(1e-3, 1e6)
+
+        plt.legend(loc='upper right')
+        #plt.title(f'Pseudo-PN Exponents')
+
+        fig = plt.gcf()
+        return fig
 
 def get_ASD(freqs, asd_path, head=7, run_type='BH', use_virgo=False):
     """

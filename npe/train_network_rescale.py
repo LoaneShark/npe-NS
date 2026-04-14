@@ -21,6 +21,8 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 torch.set_default_dtype(torch.float64)
 
+from shutil import SameFileError
+
 
 def get_cli():
     parser = argparse.ArgumentParser()
@@ -57,6 +59,10 @@ def get_cli():
                         help="Include tidal deformation waveform data, up to 5PN.")
     parser.add_argument("--include-tidal-data-2p5and4", action=argparse.BooleanOptionalAction, default=None, required=False,
                         help="Include tidal deformation waveform data which may be degenerate with waveform parameters, specifically at 2.5PN and 4PN")
+    parser.add_argument("--include-2PN-data", action=argparse.BooleanOptionalAction, default=True, required=False,
+                        help="Include dephasing training data for the 2PN order.")
+    parser.add_argument("--include-1p5PN-data", action=argparse.BooleanOptionalAction, default=True, required=False,
+                        help="Include dephasing training data for the 1.5PN order.")
     parser.add_argument("--rescale-2p5and4", action=argparse.BooleanOptionalAction, default=None, required=False,
                         help="Whether or not to suppress latent space support at 2.5PN and 4PN orders.")
     parser.add_argument("--rescale-2p5and4-only", action=argparse.BooleanOptionalAction, default=None, required=False,
@@ -493,7 +499,7 @@ def main():
     args.npoints_for_generation = 16
     args.show_plot = False
 
-    args.include_tidal_data = bool(args.include_tidal_data) or bool(args.include_tidal_data_full)
+    args.include_tidal_data = bool(args.include_tidal_data)
     args.include_tidal_data_2p5and4 = bool(args.include_tidal_data_2p5and4) if args.include_tidal_data_2p5and4 is not None else args.include_tidal_data
     args.rescale_2p5and4 = (bool(args.rescale_2p5and4) or bool(args.rescale_2p5and4_only)) and args.include_tidal_data_2p5and4
     args.rescale_2p5and4_only = bool(args.rescale_2p5and4_only)
@@ -514,9 +520,15 @@ def main():
             'ppe-minus5.pkl',
             'ppe-minus4.pkl',
             'ppe-minus3.pkl',
-            'ppe-minus2.pkl',
-            'ppe-minus1.pkl'
         ]
+        if args.include_1p5PN_data:
+            args.dataset_filenames += [
+                'ppe-minus2.pkl'
+            ]
+        if args.include_2PN_data:
+            args.dataset_filenames += [
+                'ppe-minus1.pkl'
+            ]
         if args.include_tidal_data:
             if args.include_tidal_data_2p5and4:
                 args.dataset_filenames += [
@@ -548,10 +560,16 @@ def main():
             'ppe-minus6.pkl',
             'ppe-minus5.pkl',
             'ppe-minus4.pkl',
-            'ppe-minus3.pkl',
-            'ppe-minus2.pkl',
-            'ppe-minus1.pkl'
+            'ppe-minus3.pkl'
         ]
+        if args.include_1p5PN_data:
+            args.dataset_filenames += [
+                'ppe-minus2.pkl'
+            ]
+        if args.include_2PN_data:
+            args.dataset_filenames += [
+                'ppe-minus1.pkl'
+            ]
     
     def prep_fn_suppressed(df):
         #df['phases'] = df['phases'].apply(lambda x: np.inf)
@@ -584,7 +602,15 @@ def main():
     resume_filename = "{}_{}-epochs.pt".format(args.resume_title, args.resume_epochs)
     resume_filepath = os.path.join(resume_cpdir, resume_filename)
     os.makedirs(resume_cpdir, exist_ok=True)
-    shutil.copyfile(args.base_network_path, resume_filepath)
+    try:
+        shutil.copyfile(args.base_network_path, resume_filepath)
+    except SameFileError:
+        print(f"Base network file already exists at the resume path: {resume_filepath}")
+        print("Proceeding with training using the existing file.")
+    except Exception as e:
+        print(f"Error copying base network file: {e}")
+        print(f"Please ensure that the base network file exists at the specified path: {args.base_network_path}")
+        raise e
 
     train(args)
 

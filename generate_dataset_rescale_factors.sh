@@ -1,13 +1,14 @@
 dataset=${1:-"dataset_BH"}
 
-psd_path="npe/utils/psds/GW191216_213338_psd_H1.dat npe/utils/psds/GW191216_213338_psd_V1.dat"
-#psd_path="npe/utils/psds/GW170817_psd_H1.dat npe/utils/psds/GW170817_psd_L1.dat npe/utils/psds/GW170817_psd_V1.dat"
+#psd_path="npe/utils/psds/GW191216_213338_psd_H1.dat npe/utils/psds/GW191216_213338_psd_V1.dat"
+psd_path="npe/utils/psds/GW170817_psd_H1.dat npe/utils/psds/GW170817_psd_L1.dat npe/utils/psds/GW170817_psd_V1.dat"
 extra_args=""
 
 #psd_path="npe/utils/asds/O3_H1_sensitivity.txt npe/utils/asds/O3_L1_sensitivity.txt npe/utils/asds/O3_V1_sensitivity.txt"
 #extra_args=" --asd"
 
 #min_args=" --min-over-tphi"
+#min_args=" --min-over-qlambda"
 min_args=""
 
 pool=4
