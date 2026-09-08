@@ -19,6 +19,8 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
+
+from utils.network import NetworkType
 torch.set_default_dtype(torch.float64)
 
 from shutil import SameFileError
@@ -69,6 +71,12 @@ def get_cli():
                         help="Whether or not to only rescale by suppressing latent space support at 2.5PN and 4PN orders.")
     parser.add_argument("--penalize-highPN", action=argparse.BooleanOptionalAction, default=None, required=False,
                         help="Penalize latent space from learning high-PN-like dephasing functions in the non-PN region.")
+    parser.add_argument("--penalize-nonPN", action=argparse.BooleanOptionalAction, default=None, required=False,
+                        help="Penalize latent space from learning PN-like dephasing functions in the non-PN region of latent space.")
+    parser.add_argument("--penalize-pseudoPN", action=argparse.BooleanOptionalAction, default=None, required=False,
+                        help="Penalize the collapse of the two individual orders of the pseudo-PN expansion.")
+    parser.add_argument("--penalize-repulsion", action=argparse.BooleanOptionalAction, default=None, required=False,
+                        help="Penalize entangled latent space representations via repulsion loss term.")
     
     parser.add_argument("--train-lr", type=float, default=1e-4,
                         help="Base learning rate to use for training.")
@@ -78,6 +86,8 @@ def get_cli():
                         help="Multiplicative learning rate decay factor (<1).")
     parser.add_argument("--train-kl-coeff", type=float, default=1e-6,
                         help="Coefficient to weight KL divergence term in loss function relative to reconstruction error term.")
+    parser.add_argument("--train-epsilon", type=float, default=0.1,
+                        help="Hyperparameter dictating clamp behavior of repulsion loss term.")
     args = parser.parse_args()
     return args
 
@@ -161,6 +171,7 @@ class VAE(nn.Module):
                  width_scale=None, depth_scale=None, 
                  latent_dim=2, data_dim=640, cond_dim=4, grid_dim=None,
                  freeze_shape=False, freeze_scale=False,
+                 network_type=None,
                  activation=nn.ReLU, batchnorm=nn.Identity):
         super().__init__()
         assert latent_dim == 2
@@ -175,6 +186,7 @@ class VAE(nn.Module):
         self.cond_dim = cond_dim
         self.freeze_shape = freeze_shape
         self.freeze_scale = freeze_scale
+        self.network_type = network_type
         self.raw_encoder = Encoder(width, depth, 
                                    latent_dim, data_dim, 
                                    cond_dim, use_cond=False,
@@ -457,6 +469,11 @@ def main():
     args.optimizer_override = True
     args.scheduler_override = True
 
+    args.network_type = NetworkType.BNS if args.run_type.upper() in ['NS', 'BNS'] else \
+                        NetworkType.NSBH if args.run_type.upper() in ['NSBH', 'BHNS'] else \
+                        NetworkType.BBH if args.run_type.upper() in ['BH', 'BBH'] else \
+                        NetworkType.CBC
+
     args.batch_size_train = 64
     args.batch_size_val = 1024
     args.batches_per_summary = 0.1
@@ -466,6 +483,7 @@ def main():
     args.lr = args.train_lr
     args.wd = args.train_wd
     args.gamma = args.train_gamma
+    args.epsilon = args.train_epsilon
     args.loss_kwargs = dict(
         kl_coeff=0., 
         shape_coeff=0., scale_coeff=0., 
@@ -474,12 +492,32 @@ def main():
     )
     args.diagnosis_kwargs = dict(with_mu=False)
 
-    # TODO: CLI arg support for variable model architecture structure? BNS vs. BBH
-    # i.e. cond_dim ~ # of intrinsic binary parameters, so we may need to expand it for BNS tidal deformability
+    if args.network_type in [NetworkType.BNS, NetworkType.NSBH, NetworkType.CBC]:
+        data_dim = args.data_dim
+        if args.include_tidal_params_full:
+            cond_dim = 8
+        elif args.include_tidal_params:
+            cond_dim = 6
+        else:
+            cond_dim = 4
+        grid_dim = 2
+        depth = 4
+        width = 512
+    elif args.network_type == NetworkType.BBH:
+        data_dim = args.data_dim
+        cond_dim = 4
+        grid_dim = 2
+        depth = 4
+        width = 512
+    else:
+        raise ValueError('run_type should be one of: \'NS\', \'BH\'')
+
     args.structure_kwargs = dict(
-        depth=4, width=512,
-        data_dim=args.data_dim, grid_dim=2,
-        cond_dim=8 if args.include_tidal_params_full else 6 if args.include_tidal_params else 4,
+        depth=depth, width=width,
+        data_dim=data_dim, 
+        grid_dim=grid_dim,
+        cond_dim=cond_dim,
+        network_type=args.network_type,
         )
 
     args.model_type = VAE
